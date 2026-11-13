@@ -104,12 +104,6 @@ export default function UniversalLoginPage() {
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
                   Password
                 </label>
-                <Link
-                  href="/forgot-password"
-                  className="text-xs font-medium text-blue-600 hover:text-blue-500"
-                >
-                  Forgot password?
-                </Link>
               </div>
               <div className="relative">
                 <input
