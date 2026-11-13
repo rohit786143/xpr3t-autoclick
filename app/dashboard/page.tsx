@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 
@@ -25,6 +25,26 @@ interface UserData {
   logs: RunLog[];
 }
 
+function getIstDateKey(dateInput: Date | string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(dateInput));
+}
+
+function getIstYearMonth(): { year: number; month: number } {
+  const parts = getIstDateKey(new Date()).split("-");
+  return { year: Number(parts[0]), month: Number(parts[1]) - 1 };
+}
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+const WEEK_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
 export default function UserDashboard() {
   const router = useRouter();
   const [user, setUser] = useState<UserData | null>(null);
@@ -38,6 +58,56 @@ export default function UserDashboard() {
   const [savingAccount, setSavingAccount] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
+
+  // Calendar State (IST)
+  const initialYM = useMemo(() => getIstYearMonth(), []);
+  const [calYear, setCalYear] = useState(initialYM.year);
+  const [calMonth, setCalMonth] = useState(initialYM.month);
+  const [selectedDateKey, setSelectedDateKey] = useState<string>(() => getIstDateKey(new Date()));
+
+  const logsByDate = useMemo(() => {
+    const map: Record<string, RunLog[]> = {};
+    if (!user?.logs) return map;
+    for (const log of user.logs) {
+      const key = getIstDateKey(log.executedAt);
+      if (!map[key]) map[key] = [];
+      map[key].push(log);
+    }
+    return map;
+  }, [user?.logs]);
+
+  const calendarCells = useMemo(() => {
+    const firstDayOfWeek = new Date(calYear, calMonth, 1).getDay();
+    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+    const cells: Array<{ day: number | null; dateKey: string | null }> = [];
+    for (let i = 0; i < firstDayOfWeek; i++) {
+      cells.push({ day: null, dateKey: null });
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      const mm = String(calMonth + 1).padStart(2, "0");
+      const dd = String(d).padStart(2, "0");
+      cells.push({ day: d, dateKey: `${calYear}-${mm}-${dd}` });
+    }
+    return cells;
+  }, [calYear, calMonth]);
+
+  const goPrevMonth = () => {
+    if (calMonth === 0) {
+      setCalYear((y) => y - 1);
+      setCalMonth(11);
+    } else {
+      setCalMonth((m) => m - 1);
+    }
+  };
+
+  const goNextMonth = () => {
+    if (calMonth === 11) {
+      setCalYear((y) => y + 1);
+      setCalMonth(0);
+    } else {
+      setCalMonth((m) => m + 1);
+    }
+  };
 
   const fetchUserData = useCallback(async () => {
     try {
@@ -343,66 +413,183 @@ export default function UserDashboard() {
           </form>
         </div>
 
-        {/* Recent Execution Logs */}
+        {/* Daily Click Detail Calendar */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div>
-              <h3 className="text-lg font-bold text-slate-900">Daily Execution History</h3>
-              <p className="text-xs text-slate-500">Recorded history of automated and manual runs for your account</p>
+              <h3 className="text-lg font-bold text-slate-900">Daily Click Detail Calendar</h3>
+              <p className="text-xs text-slate-500">
+                Click any date to see whether the bot clicked Start Engine or the exact reason it failed.
+              </p>
             </div>
-            <button
-              onClick={fetchUserData}
-              className="text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 transition"
-            >
-              Refresh
-            </button>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3 text-xs font-medium">
+                <span className="inline-flex items-center gap-1.5 text-emerald-700">
+                  <span className="w-3 h-3 rounded-sm bg-emerald-500 inline-block"></span>
+                  Clicked / Active
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-red-700">
+                  <span className="w-3 h-3 rounded-sm bg-red-500 inline-block"></span>
+                  Failed / Not Clicked
+                </span>
+              </div>
+              <button
+                onClick={fetchUserData}
+                className="text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-100 transition"
+              >
+                Refresh
+              </button>
+            </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-slate-600">
-              <thead className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                <tr>
-                  <th className="py-3 px-4">Timestamp (IST)</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Execution Message / Outcome</th>
-                  <th className="py-3 px-4">Duration</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-mono text-xs">
-                {user?.logs && user.logs.length > 0 ? (
-                  user.logs.map((log) => (
-                    <tr key={log.id} className="hover:bg-slate-50/50">
-                      <td className="py-3 px-4 text-slate-500 whitespace-nowrap">
-                        {new Date(log.executedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                            log.status === "success"
-                              ? "bg-emerald-100 text-emerald-800"
-                              : "bg-red-100 text-red-800"
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left: Month Calendar Grid */}
+            <div className="lg:col-span-7 border border-slate-200 rounded-2xl p-4 bg-slate-50/50">
+              <div className="flex items-center justify-between mb-4">
+                <button
+                  type="button"
+                  onClick={goPrevMonth}
+                  className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition"
+                >
+                  &larr; Prev
+                </button>
+                <h4 className="text-sm font-bold text-slate-900">
+                  {MONTH_NAMES[calMonth]} {calYear}
+                </h4>
+                <button
+                  type="button"
+                  onClick={goNextMonth}
+                  className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition"
+                >
+                  Next &rarr;
+                </button>
+              </div>
+
+              <div className="grid grid-cols-7 gap-1.5 text-center mb-2">
+                {WEEK_DAYS.map((wd) => (
+                  <div key={wd} className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-1">
+                    {wd}
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-7 gap-1.5">
+                {calendarCells.map((cell, idx) => {
+                  if (!cell.day || !cell.dateKey) {
+                    return <div key={`empty-${idx}`} className="h-12 sm:h-14" />;
+                  }
+                  const dayLogs = logsByDate[cell.dateKey] || [];
+                  const hasSuccess = dayLogs.some((l) => l.status === "success");
+                  const hasFailed = !hasSuccess && dayLogs.some((l) => l.status === "failed");
+                  const isSelected = selectedDateKey === cell.dateKey;
+
+                  let cellClasses =
+                    "bg-white border-slate-200 text-slate-700 hover:border-slate-400";
+                  if (hasSuccess) {
+                    cellClasses =
+                      "bg-emerald-500 border-emerald-600 text-white hover:bg-emerald-600";
+                  } else if (hasFailed) {
+                    cellClasses =
+                      "bg-red-500 border-red-600 text-white hover:bg-red-600";
+                  }
+
+                  return (
+                    <button
+                      key={cell.dateKey}
+                      type="button"
+                      onClick={() => setSelectedDateKey(cell.dateKey!)}
+                      className={`h-12 sm:h-14 rounded-xl border font-semibold text-xs sm:text-sm flex flex-col items-center justify-center transition relative ${cellClasses} ${
+                        isSelected ? "ring-2 ring-offset-2 ring-blue-600" : ""
+                      }`}
+                    >
+                      <span>{cell.day}</span>
+                      {dayLogs.length > 0 && (
+                        <span className="text-[9px] font-medium opacity-90">
+                          {hasSuccess ? "Clicked" : "Failed"}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Right: Selected Date Detail & Reason */}
+            <div className="lg:col-span-5 border border-slate-200 rounded-2xl p-5 bg-white flex flex-col">
+              <div className="border-b border-slate-100 pb-3 mb-4">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  Selected Date Details (IST)
+                </span>
+                <h4 className="text-base font-bold text-slate-900 mt-0.5">
+                  {new Date(`${selectedDateKey}T00:00:00+05:30`).toLocaleDateString("en-IN", {
+                    weekday: "long",
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </h4>
+              </div>
+
+              {(() => {
+                const selectedLogs = logsByDate[selectedDateKey] || [];
+                if (selectedLogs.length === 0) {
+                  return (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center py-8 text-slate-400">
+                      <p className="text-sm font-medium text-slate-500">No activity on this date</p>
+                      <p className="text-xs mt-1">
+                        No automated 12:00 AM IST run or manual test was recorded on this day.
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-3 overflow-y-auto max-h-80 pr-1">
+                    {selectedLogs.map((log) => {
+                      const isOk = log.status === "success";
+                      return (
+                        <div
+                          key={log.id}
+                          className={`p-3.5 rounded-xl border ${
+                            isOk
+                              ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+                              : "bg-red-50 border-red-200 text-red-900"
                           }`}
                         >
-                          {log.status}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 font-sans text-slate-800">
-                        {log.message}
-                      </td>
-                      <td className="py-3 px-4 text-slate-500">
-                        {log.durationMs ? `${log.durationMs}ms` : "-"}
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={4} className="py-8 text-center text-slate-400 font-sans">
-                      No click records yet. Test run or wait for tonight&apos;s 12:00 AM IST routine.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold uppercase ${
+                                isOk
+                                  ? "bg-emerald-200 text-emerald-900"
+                                  : "bg-red-200 text-red-900"
+                              }`}
+                            >
+                              {isOk ? "Start Engine Clicked / Active" : "Not Clicked (Failed)"}
+                            </span>
+                            <span className="text-[11px] font-mono opacity-80">
+                              {new Date(log.executedAt).toLocaleTimeString("en-IN", {
+                                timeZone: "Asia/Kolkata",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                second: "2-digit",
+                              })}
+                            </span>
+                          </div>
+                          <p className="text-xs sm:text-sm font-medium leading-relaxed">
+                            {isOk ? log.message : `Reason: ${log.message}`}
+                          </p>
+                          {log.durationMs && (
+                            <p className="text-[11px] opacity-70 mt-1 font-mono">
+                              Duration: {log.durationMs}ms
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
           </div>
         </div>
       </main>

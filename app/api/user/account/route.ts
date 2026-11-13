@@ -19,7 +19,7 @@ export async function GET() {
       include: {
         logs: {
           orderBy: { executedAt: "desc" },
-          take: 15,
+          take: 180,
         },
       },
     });
