@@ -96,3 +96,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Ghost login failed." }, { status: 500 });
   }
 }
+

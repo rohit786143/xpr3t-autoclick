@@ -62,10 +62,10 @@ export default function UniversalLoginPage() {
           </div>
         </div>
         <h2 className="text-2xl font-bold tracking-tight text-slate-900">
-          User & Admin Portal
+          User Login
         </h2>
         <p className="mt-1 text-sm text-slate-500">
-          Automated Arbitrage Engine Management System
+          Sign in to manage your automated 12:00 AM IST Arbitrage Engine
         </p>
       </div>
 
@@ -147,16 +147,16 @@ export default function UniversalLoginPage() {
             </button>
           </form>
 
-          <div className="mt-6 pt-6 border-t border-slate-100 text-center">
-            <p className="text-sm text-slate-600">
-              Don&apos;t have an account yet?{" "}
-              <Link
-                href="/register"
-                className="font-semibold text-blue-600 hover:text-blue-500 hover:underline"
-              >
-                Register here
-              </Link>
+          <div className="mt-6 pt-6 border-t border-slate-100 text-center space-y-3">
+            <p className="text-xs font-medium text-slate-500">
+              New to XPR3T Auto-Clicker?
             </p>
+            <Link
+              href="/register"
+              className="w-full py-2.5 px-4 rounded-xl font-semibold text-sm text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition flex items-center justify-center"
+            >
+              Register New Account
+            </Link>
           </div>
         </div>
 
