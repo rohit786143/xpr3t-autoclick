@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String   @id @default(cuid())
+  username          String
+  password          String   // Hashed using bcrypt
+  encryptedPassword String?  // AES-256-GCM encrypted password for Playwright automated login
+  targetWebsiteUrl  String   @default("https://xpr3t.com/Sign-in.html")
+  buttonSelector    String   @default("")
+  usernameSelector  String   @default("#inputEmail")
+  passwordSelector  String   @default("#inputPassword")
+  submitSelector    String   @default("#submit-login")
+  status            String   @default("active") // "active" | "inactive"
+  lastRunAt         DateTime?
+  lastRunStatus     String?  // "success" | "failed" | "running"
+  lastRunMessage    String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  logs              RunLog[]
+}
+
+model Admin {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String   // Hashed using bcrypt
+  createdAt DateTime @default(now())
+}
+
+model RunLog {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status     String   // "success" | "failed"
+  message    String
+  durationMs Int?
+  executedAt DateTime @default(now())
+}
