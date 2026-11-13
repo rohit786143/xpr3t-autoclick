@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
 import { hashPassword, encryptTargetPassword } from "@/lib/crypto";
+import { getSession } from "@/lib/auth";
 
 const DEFAULT_TARGET_URL = "https://xpr3t.com/Sign-in.html";
 
@@ -43,31 +44,47 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { email, password, xpr3tUsername, xpr3tPassword } = body;
-
-    if (!email || !password) {
+    const session = await getSession();
+    if (!session || session.role !== "admin" || session.email !== "rohitsagarksg@gmail.com") {
       return NextResponse.json(
-        { error: "Email and Password are required." },
+        { error: "Only Master Admin (rohitsagarksg@gmail.com) can add unlimited accounts." },
+        { status: 403 }
+      );
+    }
+
+    const body = await request.json();
+    const xpr3tUsername = (body.xpr3tUsername || body.username || "").trim();
+    const xpr3tPassword = body.xpr3tPassword || body.password || "";
+
+    if (!xpr3tUsername || !xpr3tPassword) {
+      return NextResponse.json(
+        { error: "XPR3T Login-ID and Password are required." },
         { status: 400 }
       );
     }
 
-    const hashedPortalPassword = await hashPassword(password);
-    let encryptedTarget = null;
-    let hashedTarget = null;
+    const existingClaim = await prisma.user.findFirst({
+      where: { xpr3tUsername },
+    });
 
-    if (xpr3tPassword) {
-      hashedTarget = await hashPassword(xpr3tPassword);
-      encryptedTarget = encryptTargetPassword(xpr3tPassword);
+    if (existingClaim) {
+      return NextResponse.json(
+        { error: `XPR3T ID "${xpr3tUsername}" is already added.` },
+        { status: 400 }
+      );
     }
+
+    const managedEmail = (body.email || `${xpr3tUsername.toLowerCase()}@managed.xpr3t.local`).trim().toLowerCase();
+    const hashedPortalPassword = await hashPassword(xpr3tPassword);
+    const hashedTarget = await hashPassword(xpr3tPassword);
+    const encryptedTarget = encryptTargetPassword(xpr3tPassword);
 
     const newUser = await prisma.user.create({
       data: {
-        email: email.trim().toLowerCase(),
+        email: managedEmail,
         portalPassword: hashedPortalPassword,
         role: "user",
-        xpr3tUsername: xpr3tUsername ? xpr3tUsername.trim() : null,
+        xpr3tUsername,
         xpr3tPassword: hashedTarget,
         encryptedPassword: encryptedTarget,
         status: "active",

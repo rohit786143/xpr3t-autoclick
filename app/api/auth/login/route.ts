@@ -16,8 +16,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Allow login by either Portal Email or XPR3T Username (or 'admin')
-    let user = await prisma.user.findFirst({
+    // Allow login by either Portal Email or XPR3T Username
+    const user = await prisma.user.findFirst({
       where: {
         OR: [
           { email: loginIdentifier },
@@ -25,13 +25,6 @@ export async function POST(request: NextRequest) {
         ],
       },
     });
-
-    // Special check: If user typed 'admin', resolve to admin user
-    if (!user && (loginIdentifier === "admin" || loginIdentifier.includes("admin"))) {
-      user = await prisma.user.findFirst({
-        where: { role: "admin" },
-      });
-    }
 
     if (!user) {
       return NextResponse.json(

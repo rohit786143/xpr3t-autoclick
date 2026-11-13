@@ -47,6 +47,7 @@ export default function UserDashboard() {
         return;
       }
       const data = await res.json();
+      setIsGhost(!!data.isGhost);
       if (data.user) {
         setUser(data.user);
         if (data.user.xpr3tUsername) {
@@ -155,18 +156,35 @@ export default function UserDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800">
+      {/* Ghost Mode Banner */}
+      {isGhost && (
+        <div className="bg-indigo-600 text-white px-4 py-2.5 text-xs sm:text-sm font-medium flex flex-wrap items-center justify-center gap-3">
+          <span>
+            You are viewing <strong>{user?.email}</strong> as Admin (Ghost Mode)
+          </span>
+          <button
+            onClick={handleRevertGhost}
+            className="px-3 py-1 rounded-lg bg-white text-indigo-700 font-semibold hover:bg-indigo-50 transition text-xs"
+          >
+            Exit Ghost Mode &amp; Return to Admin Panel
+          </button>
+        </div>
+      )}
+
       {/* Top Navbar */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Image
-              src="/xpr3t-logo.png"
-              alt="XPR3T"
-              width={130}
-              height={38}
-              priority
-              className="h-8 w-auto object-contain"
-            />
+            <div className="px-3 py-1 bg-[#0b1120] rounded-xl border border-slate-800">
+              <Image
+                src="/xpr3t-logo.png"
+                alt="XPR3T"
+                width={130}
+                height={38}
+                priority
+                className="h-7 w-auto object-contain"
+              />
+            </div>
             <span className="hidden sm:inline-block text-xs font-semibold px-2.5 py-1 bg-blue-50 text-blue-700 rounded-full border border-blue-200">
               User Portal
             </span>
@@ -282,18 +300,19 @@ export default function UserDashboard() {
             </div>
           )}
 
-          <form onSubmit={handleLinkAccount} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <form onSubmit={handleLinkAccount} autoComplete="off" className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 XPR3T Login ID (Username)
               </label>
               <input
                 type="text"
+                autoComplete="off"
                 required
                 value={xpr3tUsername}
                 onChange={(e) => setXpr3tUsername(e.target.value)}
                 placeholder="e.g. XP71457513"
-                className="w-full px-4 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition font-mono"
+                className="w-full px-4 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-black placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition font-mono"
               />
             </div>
 
@@ -303,11 +322,12 @@ export default function UserDashboard() {
               </label>
               <input
                 type="password"
+                autoComplete="new-password"
                 required
                 value={xpr3tPassword}
                 onChange={(e) => setXpr3tPassword(e.target.value)}
                 placeholder={isConfigured ? "Enter new password to update" : "Enter XPR3T password"}
-                className="w-full px-4 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                className="w-full px-4 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-black placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
               />
             </div>
 

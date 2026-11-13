@@ -97,7 +97,7 @@ export default function ForgotPasswordPage() {
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
         <div className="flex justify-center mb-4">
-          <div className="p-3 bg-white rounded-2xl shadow-sm border border-slate-200">
+          <div className="px-5 py-2.5 bg-[#0b1120] rounded-2xl shadow-md border border-slate-800">
             <Image
               src="/xpr3t-logo.png"
               alt="XPR3T Logo"

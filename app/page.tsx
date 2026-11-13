@@ -50,7 +50,7 @@ export default function UniversalLoginPage() {
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
         <div className="flex justify-center mb-4">
-          <div className="p-3 bg-white rounded-2xl shadow-sm border border-slate-200">
+          <div className="px-5 py-2.5 bg-[#0b1120] rounded-2xl shadow-md border border-slate-800">
             <Image
               src="/xpr3t-logo.png"
               alt="XPR3T Logo"
@@ -80,7 +80,7 @@ export default function UniversalLoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} autoComplete="off" className="space-y-5">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Portal Email or XPR3T Login ID
@@ -88,11 +88,13 @@ export default function UniversalLoginPage() {
               <div className="relative">
                 <input
                   type="text"
+                  name="portal_login_identifier"
+                  autoComplete="off"
                   required
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder="name@example.com or Agent ID / admin"
-                  className="w-full px-4 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                  placeholder="Enter your email or XPR3T ID"
+                  className="w-full px-4 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-black placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 />
               </div>
             </div>
@@ -112,11 +114,13 @@ export default function UniversalLoginPage() {
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"}
+                  name="portal_login_password"
+                  autoComplete="new-password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
-                  className="w-full px-4 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition pr-11"
+                  className="w-full px-4 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-black placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition pr-14"
                 />
                 <button
                   type="button"

@@ -29,6 +29,7 @@ export async function GET() {
     }
 
     return NextResponse.json({
+      isGhost: !!session.isGhost,
       user: {
         id: user.id,
         email: user.email,

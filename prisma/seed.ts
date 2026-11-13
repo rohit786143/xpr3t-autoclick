@@ -2,11 +2,16 @@ import prisma from "../lib/db";
 import { hashPassword, encryptTargetPassword } from "../lib/crypto";
 
 async function main() {
-  const adminEmail = (process.env.ADMIN_EMAIL || "admin@himachalpradeshlive.com").toLowerCase().trim();
-  const adminPassword = process.env.ADMIN_PASSWORD || "AdminPassword123!";
+  const adminEmail = "rohitsagarksg@gmail.com";
+  const adminPassword = process.env.ADMIN_PASSWORD || "Rohit@40014";
   const hashedAdminPassword = await hashPassword(adminPassword);
 
-  // Upsert Admin account
+  // Remove legacy default admin if present
+  await prisma.user.deleteMany({
+    where: { email: "admin@himachalpradeshlive.com" },
+  });
+
+  // Upsert Master Admin account
   const admin = await prisma.user.upsert({
     where: { email: adminEmail },
     update: {
@@ -24,7 +29,7 @@ async function main() {
     },
   });
 
-  console.log(`[Seed] Admin ready: ${admin.email}`);
+  console.log(`[Seed] Master Admin ready: ${admin.email}`);
 }
 
 main()

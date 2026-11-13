@@ -56,6 +56,11 @@ export default function AdminDashboardPage() {
     text: string;
   } | null>(null);
 
+  // Master Admin Unlimited Add XPR3T Account state
+  const [newXpr3tId, setNewXpr3tId] = useState("");
+  const [newXpr3tPass, setNewXpr3tPass] = useState("");
+  const [addingAccount, setAddingAccount] = useState(false);
+
   // History modal
   const [historyUser, setHistoryUser] = useState<BotUser | null>(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -167,6 +172,40 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const handleAddUnlimitedAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBanner(null);
+    setAddingAccount(true);
+    try {
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          xpr3tUsername: newXpr3tId,
+          xpr3tPassword: newXpr3tPass,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to add account.");
+      }
+      setBanner({
+        type: "success",
+        text: `XPR3T Account "${newXpr3tId}" added! Ready for 12:00 AM IST cycle.`,
+      });
+      setNewXpr3tId("");
+      setNewXpr3tPass("");
+      await fetchUsers();
+    } catch (err: unknown) {
+      setBanner({
+        type: "error",
+        text: err instanceof Error ? err.message : "Failed to add account.",
+      });
+    } finally {
+      setAddingAccount(false);
+    }
+  };
+
   const handleDeleteUser = async (id: string, label: string) => {
     if (!confirm(`Are you sure you want to delete user "${label}"?`)) return;
     try {
@@ -195,14 +234,16 @@ export default function AdminDashboardPage() {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Image
-              src="/xpr3t-logo.png"
-              alt="XPR3T"
-              width={140}
-              height={40}
-              priority
-              className="h-8 w-auto object-contain"
-            />
+            <div className="px-3 py-1 bg-[#0b1120] rounded-xl border border-slate-800">
+              <Image
+                src="/xpr3t-logo.png"
+                alt="XPR3T"
+                width={140}
+                height={40}
+                priority
+                className="h-7 w-auto object-contain"
+              />
+            </div>
             <div className="flex items-center gap-2">
               <span className="text-sm font-bold text-slate-900 tracking-tight">
                 Admin Master Control
@@ -315,6 +356,62 @@ export default function AdminDashboardPage() {
               )}
             </button>
           </div>
+        </div>
+
+        {/* Master Admin: Unlimited XPR3T Account Adder */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">
+                + Add XPR3T Account (Master Admin Unlimited)
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Only Master Admin (rohitsagarksg@gmail.com) can add unlimited XPR3T accounts here. Regular users are limited to 1 account each.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleAddUnlimitedAccount} autoComplete="off" className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                XPR3T Login ID (Username)
+              </label>
+              <input
+                type="text"
+                autoComplete="off"
+                required
+                value={newXpr3tId}
+                onChange={(e) => setNewXpr3tId(e.target.value)}
+                placeholder="e.g. XP71457513"
+                className="w-full px-4 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-black placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                XPR3T Login Password
+              </label>
+              <input
+                type="password"
+                autoComplete="new-password"
+                required
+                value={newXpr3tPass}
+                onChange={(e) => setNewXpr3tPass(e.target.value)}
+                placeholder="Enter XPR3T password"
+                className="w-full px-4 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-black placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <button
+                type="submit"
+                disabled={addingAccount}
+                className="w-full py-2.5 px-4 rounded-xl font-semibold text-sm text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {addingAccount ? "Adding..." : "+ Add Account"}
+              </button>
+            </div>
+          </form>
         </div>
 
         {/* Registered Users Table */}
