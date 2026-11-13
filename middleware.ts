@@ -1,41 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE_NAME, verifyAdminToken } from "./lib/auth";
+import { SESSION_COOKIE_NAME, verifySessionToken } from "./lib/auth";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow public access to root, login page, auth endpoints, and demo target
+  // Public paths
   if (
     pathname === "/" ||
-    pathname === "/admin/login" ||
+    pathname === "/login" ||
+    pathname === "/register" ||
+    pathname === "/forgot-password" ||
     pathname.startsWith("/api/auth") ||
-    pathname.startsWith("/demo-target")
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/xpr3t-logo.png") ||
+    pathname === "/favicon.ico"
   ) {
-    if (pathname === "/admin/login") {
-      const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-      if (token && (await verifyAdminToken(token))) {
-        return NextResponse.redirect(new URL("/", request.url));
-      }
-    }
     return NextResponse.next();
   }
 
-  // Protect /admin/* and /api/users/* and /api/worker/*
-  const isProtectedPage = pathname.startsWith("/admin");
-  const isProtectedApi =
-    pathname.startsWith("/api/users") || pathname.startsWith("/api/worker");
+  const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+  const session = token ? await verifySessionToken(token) : null;
 
-  if (isProtectedPage || isProtectedApi) {
-    const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-    const verified = token ? await verifyAdminToken(token) : null;
+  // Protect Admin Dashboard
+  if (pathname.startsWith("/admin")) {
+    if (!session || session.role !== "admin") {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+  }
 
-    if (!verified) {
-      if (isProtectedApi) {
-        return NextResponse.json(
-          { error: "Unauthorized. Admin session required." },
-          { status: 401 }
-        );
-      }
+  // Protect User Dashboard
+  if (pathname.startsWith("/dashboard")) {
+    if (!session) {
       return NextResponse.redirect(new URL("/", request.url));
     }
   }
@@ -44,5 +39,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/admin/:path*", "/api/users/:path*", "/api/worker/:path*"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

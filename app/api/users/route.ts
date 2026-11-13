@@ -18,12 +18,11 @@ export async function GET() {
 
     const sanitizedUsers = users.map((u) => ({
       id: u.id,
-      username: u.username,
+      email: u.email,
+      role: u.role,
+      xpr3tUsername: u.xpr3tUsername,
       targetWebsiteUrl: u.targetWebsiteUrl || DEFAULT_TARGET_URL,
       buttonSelector: u.buttonSelector,
-      usernameSelector: u.usernameSelector,
-      passwordSelector: u.passwordSelector,
-      submitSelector: u.submitSelector,
       status: u.status,
       lastRunAt: u.lastRunAt,
       lastRunStatus: u.lastRunStatus,
@@ -45,42 +44,33 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const {
-      username,
-      password,
-      targetWebsiteUrl,
-      buttonSelector,
-      usernameSelector,
-      passwordSelector,
-      submitSelector,
-      status,
-    } = body;
+    const { email, password, xpr3tUsername, xpr3tPassword } = body;
 
-    if (!username || !password) {
+    if (!email || !password) {
       return NextResponse.json(
-        {
-          error: "Username (Login-ID) and Password are required.",
-        },
+        { error: "Email and Password are required." },
         { status: 400 }
       );
     }
 
-    const finalUrl = (targetWebsiteUrl || DEFAULT_TARGET_URL).trim();
+    const hashedPortalPassword = await hashPassword(password);
+    let encryptedTarget = null;
+    let hashedTarget = null;
 
-    const hashedPassword = await hashPassword(password);
-    const encryptedPassword = encryptTargetPassword(password);
+    if (xpr3tPassword) {
+      hashedTarget = await hashPassword(xpr3tPassword);
+      encryptedTarget = encryptTargetPassword(xpr3tPassword);
+    }
 
     const newUser = await prisma.user.create({
       data: {
-        username: username.trim(),
-        password: hashedPassword,
-        encryptedPassword,
-        targetWebsiteUrl: finalUrl,
-        buttonSelector: (buttonSelector || "").trim(),
-        usernameSelector: usernameSelector?.trim() || "#inputEmail",
-        passwordSelector: passwordSelector?.trim() || "#inputPassword",
-        submitSelector: submitSelector?.trim() || "#submit-login",
-        status: status === "inactive" ? "inactive" : "active",
+        email: email.trim().toLowerCase(),
+        portalPassword: hashedPortalPassword,
+        role: "user",
+        xpr3tUsername: xpr3tUsername ? xpr3tUsername.trim() : null,
+        xpr3tPassword: hashedTarget,
+        encryptedPassword: encryptedTarget,
+        status: "active",
       },
       include: {
         logs: true,
@@ -91,16 +81,10 @@ export async function POST(request: NextRequest) {
       {
         user: {
           id: newUser.id,
-          username: newUser.username,
-          targetWebsiteUrl: newUser.targetWebsiteUrl,
-          buttonSelector: newUser.buttonSelector,
-          usernameSelector: newUser.usernameSelector,
-          passwordSelector: newUser.passwordSelector,
-          submitSelector: newUser.submitSelector,
+          email: newUser.email,
+          role: newUser.role,
+          xpr3tUsername: newUser.xpr3tUsername,
           status: newUser.status,
-          lastRunAt: newUser.lastRunAt,
-          lastRunStatus: newUser.lastRunStatus,
-          lastRunMessage: newUser.lastRunMessage,
           createdAt: newUser.createdAt,
           logs: newUser.logs,
         },

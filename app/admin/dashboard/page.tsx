@@ -4,31 +4,22 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import {
-  Plus,
   Play,
   Trash2,
-  Edit3,
   CheckCircle2,
   XCircle,
   Clock,
   LogOut,
   RefreshCw,
-  Globe,
-  User as UserIcon,
-  Shield,
   ExternalLink,
   Loader2,
   Power,
   History,
   X,
-  Lock,
-  Eye,
-  EyeOff,
   AlertTriangle,
   Zap,
+  LogIn,
 } from "lucide-react";
-
-const DEFAULT_XPR3T_URL = "https://xpr3t.com/Sign-in.html";
 
 interface RunLog {
   id: string;
@@ -40,12 +31,11 @@ interface RunLog {
 
 interface BotUser {
   id: string;
-  username: string;
+  email: string;
+  role: string;
+  xpr3tUsername: string | null;
   targetWebsiteUrl: string;
   buttonSelector: string;
-  usernameSelector: string;
-  passwordSelector: string;
-  submitSelector: string;
   status: "active" | "inactive";
   lastRunAt: string | null;
   lastRunStatus: string | null;
@@ -59,44 +49,28 @@ export default function AdminDashboardPage() {
   const [users, setUsers] = useState<BotUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningIds, setRunningIds] = useState<Record<string, boolean>>({});
+  const [ghostingId, setGhostingId] = useState<string | null>(null);
   const [runningAll, setRunningAll] = useState(false);
   const [banner, setBanner] = useState<{
     type: "success" | "error";
     text: string;
   } | null>(null);
 
-  // Quick Add User form
-  const [newUsername, setNewUsername] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [addingUser, setAddingUser] = useState(false);
-
-  // Edit User modal state
-  const [editingUser, setEditingUser] = useState<BotUser | null>(null);
-  const [editUsername, setEditUsername] = useState("");
-  const [editPassword, setEditPassword] = useState("");
-  const [editStatus, setEditStatus] = useState<"active" | "inactive">("active");
-  const [savingEdit, setSavingEdit] = useState(false);
-
-  // Logs drawer state
-  const [expandedLogUserId, setExpandedLogUserId] = useState<string | null>(
-    null
-  );
+  // History modal
+  const [historyUser, setHistoryUser] = useState<BotUser | null>(null);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
 
   const fetchUsers = useCallback(async () => {
     try {
-      const res = await fetch("/api/users", { cache: "no-store" });
+      const res = await fetch("/api/users");
       if (res.status === 401) {
         router.push("/");
-        router.refresh();
         return;
       }
       const data = await res.json();
-      if (data.users) {
-        setUsers(data.users);
-      }
-    } catch (error) {
-      console.error("Failed to load users:", error);
+      setUsers(data.users || []);
+    } catch (err) {
+      console.error("Failed to fetch users", err);
     } finally {
       setLoading(false);
     }
@@ -104,421 +78,238 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     fetchUsers();
+    const interval = setInterval(fetchUsers, 15000);
+    return () => clearInterval(interval);
   }, [fetchUsers]);
 
-  async function handleQuickAddUser(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newUsername.trim() || !newPassword) return;
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/");
+    router.refresh();
+  };
 
-    setAddingUser(true);
+  const handleGhostLogin = async (targetUserId: string, targetEmail: string) => {
+    setGhostingId(targetUserId);
     setBanner(null);
-
     try {
-      const res = await fetch("/api/users", {
+      const res = await fetch("/api/admin/ghost-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: newUsername.trim(),
-          password: newPassword,
-          targetWebsiteUrl: DEFAULT_XPR3T_URL,
-          buttonSelector: "#btnArbitrageStart",
-          usernameSelector: "#inputEmail",
-          passwordSelector: "#inputPassword",
-          submitSelector: "#submit-login",
-          status: "active",
-        }),
+        body: JSON.stringify({ userId: targetUserId }),
       });
-
       const data = await res.json();
       if (!res.ok) {
-        setBanner({
-          type: "error",
-          text: data.error || "Failed to add user.",
-        });
-        setAddingUser(false);
-        return;
+        throw new Error(data.error || "Ghost login failed.");
       }
-
-      setNewUsername("");
-      setNewPassword("");
-      setBanner({
-        type: "success",
-        text: `User "${data.user.username}" added! Ready for daily 12:00 AM IST Arbitrage auto-click.`,
-      });
-      await fetchUsers();
-    } catch {
+      router.push("/dashboard");
+      router.refresh();
+    } catch (err: unknown) {
       setBanner({
         type: "error",
-        text: "Network error while adding user.",
+        text: err instanceof Error ? err.message : "Ghost login error.",
       });
-    } finally {
-      setAddingUser(false);
+      setGhostingId(null);
     }
-  }
+  };
 
-  function openEditModal(user: BotUser) {
-    setEditingUser(user);
-    setEditUsername(user.username);
-    setEditPassword("");
-    setEditStatus(user.status);
-  }
-
-  async function handleSaveEdit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!editingUser) return;
-    setSavingEdit(true);
+  const handleTriggerUser = async (id: string, label: string) => {
+    setRunningIds((prev) => ({ ...prev, [id]: true }));
     setBanner(null);
-
     try {
-      const res = await fetch(`/api/users/${editingUser.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: editUsername.trim(),
-          password: editPassword || undefined,
-          status: editStatus,
-        }),
-      });
-
+      const res = await fetch(`/api/users/${id}/trigger`, { method: "POST" });
       const data = await res.json();
-      if (!res.ok) {
-        setBanner({
-          type: "error",
-          text: data.error || "Failed to update user.",
-        });
-        setSavingEdit(false);
-        return;
-      }
+      if (!res.ok) throw new Error(data.error || "Run failed");
 
-      setEditingUser(null);
-      setBanner({
-        type: "success",
-        text: `Updated credentials for "${data.user.username}".`,
-      });
-      await fetchUsers();
-    } catch {
-      setBanner({
-        type: "error",
-        text: "Network error while updating user.",
-      });
-    } finally {
-      setSavingEdit(false);
-    }
-  }
-
-  async function handleToggleStatus(user: BotUser) {
-    const nextStatus = user.status === "active" ? "inactive" : "active";
-    try {
-      const res = await fetch(`/api/users/${user.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: nextStatus }),
-      });
-      if (res.ok) {
-        await fetchUsers();
-      }
-    } catch (error) {
-      console.error("Failed to toggle status:", error);
-    }
-  }
-
-  async function handleDeleteUser(user: BotUser) {
-    if (
-      !window.confirm(
-        `Delete user "${user.username}" and remove their persistent session?`
-      )
-    ) {
-      return;
-    }
-
-    try {
-      const res = await fetch(`/api/users/${user.id}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
+      if (data.result?.success) {
         setBanner({
           type: "success",
-          text: `Deleted user "${user.username}".`,
-        });
-        await fetchUsers();
-      }
-    } catch {
-      setBanner({
-        type: "error",
-        text: "Failed to delete user.",
-      });
-    }
-  }
-
-  async function handleTriggerUser(user: BotUser) {
-    setRunningIds((prev) => ({ ...prev, [user.id]: true }));
-    setBanner(null);
-
-    try {
-      const res = await fetch(`/api/users/${user.id}/trigger`, {
-        method: "POST",
-      });
-      const data = await res.json();
-
-      if (res.ok && data.result) {
-        setBanner({
-          type: data.result.success ? "success" : "error",
-          text: `[${user.username}] ${data.result.message}`,
+          text: `[${label}] ${data.result.message}`,
         });
       } else {
         setBanner({
           type: "error",
-          text: data.error || `Bot run failed for ${user.username}.`,
+          text: `[${label}] ${data.result?.message || data.error}`,
         });
       }
       await fetchUsers();
-    } catch {
+    } catch (err: unknown) {
       setBanner({
         type: "error",
-        text: `Network error triggering bot for ${user.username}.`,
+        text: `[${label}] ${err instanceof Error ? err.message : "Run failed"}`,
       });
     } finally {
-      setRunningIds((prev) => ({ ...prev, [user.id]: false }));
+      setRunningIds((prev) => ({ ...prev, [id]: false }));
     }
-  }
+  };
 
-  async function handleRunAllActive() {
+  const handleRunAll = async () => {
     setRunningAll(true);
     setBanner(null);
-
     try {
       const res = await fetch("/api/worker/run-all", { method: "POST" });
       const data = await res.json();
-      if (res.ok && data.results) {
-        const succeeded = data.results.filter(
-          (r: { success: boolean }) => r.success
-        ).length;
-        setBanner({
-          type: succeeded === data.results.length ? "success" : "error",
-          text: `Batch completed: ${succeeded}/${data.results.length} active account(s) processed.`,
-        });
-      } else {
-        setBanner({
-          type: "error",
-          text: data.error || "Batch execution failed.",
-        });
-      }
+      if (!res.ok) throw new Error(data.error || "Failed to run all users");
+
+      const successes = data.results?.filter((r: { success: boolean }) => r.success).length || 0;
+      const total = data.results?.length || 0;
+      setBanner({
+        type: "success",
+        text: `Batch completed: ${successes}/${total} accounts triggered successfully.`,
+      });
       await fetchUsers();
-    } catch {
+    } catch (err: unknown) {
       setBanner({
         type: "error",
-        text: "Network error during batch run.",
+        text: err instanceof Error ? err.message : "Failed to trigger all accounts.",
       });
     } finally {
       setRunningAll(false);
     }
-  }
+  };
 
-  async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/");
-    router.refresh();
-  }
+  const handleDeleteUser = async (id: string, label: string) => {
+    if (!confirm(`Are you sure you want to delete user "${label}"?`)) return;
+    try {
+      const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete user");
+      setBanner({
+        type: "success",
+        text: `User "${label}" removed.`,
+      });
+      await fetchUsers();
+    } catch (err: unknown) {
+      setBanner({
+        type: "error",
+        text: err instanceof Error ? err.message : "Error deleting user.",
+      });
+    }
+  };
 
-  const activeCount = users.filter((u) => u.status === "active").length;
-  const successCount = users.filter(
-    (u) => u.lastRunStatus === "success"
-  ).length;
+  const totalUsers = users.length;
+  const activeBots = users.filter((u) => u.status === "active" && u.xpr3tUsername).length;
+  const successfulChecks = users.filter((u) => u.lastRunStatus === "success").length;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      {/* Top Navigation - Bright White Header */}
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur-md shadow-sm">
+    <div className="min-h-screen bg-slate-50 text-slate-800">
+      {/* Top Navbar */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="relative w-36 h-10 flex items-center justify-center p-1.5 rounded-xl bg-slate-900 shadow-sm">
-              <Image
-                src="/xpr3t-logo.png"
-                alt="XPR3T Logo"
-                width={140}
-                height={35}
-                priority
-                className="object-contain"
-              />
-            </div>
-            <div>
-              <h1 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                Arbitrage Engine Auto-Clicker
-                <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                  12:00 AM IST
-                </span>
-              </h1>
-              <p className="text-xs text-slate-500">
-                Automatic daily &quot;Start Engine&quot; click scheduler
-              </p>
+            <Image
+              src="/xpr3t-logo.png"
+              alt="XPR3T"
+              width={140}
+              height={40}
+              priority
+              className="h-8 w-auto object-contain"
+            />
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-slate-900 tracking-tight">
+                Admin Master Control
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                12:00 AM IST Routine Active
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-3">
             <a
-              href={DEFAULT_XPR3T_URL}
+              href="https://xpr3t.com/Sign-in.html"
               target="_blank"
               rel="noreferrer"
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 transition"
+              className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-blue-600 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition"
             >
-              <ExternalLink className="h-3.5 w-3.5 text-blue-600" />
+              <ExternalLink className="w-3.5 h-3.5" />
               Open XPR3T Portal
             </a>
             <button
               onClick={handleLogout}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-xs font-semibold text-rose-700 transition"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-red-600 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-red-50 transition"
             >
-              <LogOut className="h-3.5 w-3.5" />
+              <LogOut className="w-3.5 h-3.5" />
               Logout
             </button>
           </div>
         </div>
       </header>
 
+      {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        {/* Add User Card - Clean Bright White */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-md shadow-slate-200/50">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
-            <div>
-              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Plus className="h-5 w-5 text-blue-600" />
-                Add XPR3T User Account
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Admin can add multiple agent IDs. The bot will automatically log in and click &quot;Start Engine&quot; every night at 12:00 AM IST.
-              </p>
-            </div>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-xs font-medium text-slate-600">
-              <Globe className="h-3.5 w-3.5 text-blue-600" />
-              Target: Top Right Arbitrage Engine
-            </span>
-          </div>
-
-          <form
-            onSubmit={handleQuickAddUser}
-            className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end"
+        {/* Banner Alerts */}
+        {banner && (
+          <div
+            className={`p-4 rounded-xl flex items-start gap-3 border shadow-sm ${
+              banner.type === "success"
+                ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+                : "bg-red-50 border-red-200 text-red-900"
+            }`}
           >
-            <div className="sm:col-span-5">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                Agent Login-ID (Username)
-              </label>
-              <div className="relative">
-                <UserIcon className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  required
-                  value={newUsername}
-                  onChange={(e) => setNewUsername(e.target.value)}
-                  placeholder="e.g. XP71457513"
-                  className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition"
-                />
-              </div>
-            </div>
+            {banner.type === "success" ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+            ) : (
+              <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+            )}
+            <div className="flex-1 text-sm font-medium">{banner.text}</div>
+            <button
+              onClick={() => setBanner(null)}
+              className="text-slate-400 hover:text-slate-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
-            <div className="sm:col-span-5">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                Login Password
-              </label>
-              <div className="relative">
-                <Lock className="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type={showNewPassword ? "text" : "password"}
-                  required
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Enter Password"
-                  className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowNewPassword(!showNewPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  {showNewPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <div className="sm:col-span-2">
-              <button
-                type="submit"
-                disabled={addingUser}
-                className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-sm font-semibold text-white shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 transition"
-              >
-                {addingUser ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <>
-                    <Plus className="h-4 w-4" />
-                    Add Account
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* Metrics Grid - Bright Theme */}
+        {/* Stats Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider">
-              <span>Total Accounts</span>
-              <UserIcon className="h-4 w-4 text-blue-600" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Registered Users
+            </span>
+            <div className="mt-2 flex items-baseline justify-between">
+              <span className="text-3xl font-extrabold text-slate-900">{totalUsers}</span>
+              <span className="text-xs text-slate-500">Self-registered via portal</span>
             </div>
-            <p className="text-3xl font-extrabold text-slate-900 mt-2">{users.length}</p>
-            <p className="text-xs text-slate-400 mt-1">
-              Automated per-account sessions
-            </p>
           </div>
 
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider">
-              <span>Active 12:00 AM Bot IDs</span>
-              <Power className="h-4 w-4 text-emerald-600" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Linked Active Bot IDs
+            </span>
+            <div className="mt-2 flex items-baseline justify-between">
+              <span className="text-3xl font-extrabold text-emerald-600">{activeBots}</span>
+              <span className="text-xs text-slate-500">Runs at midnight IST</span>
             </div>
-            <p className="text-3xl font-extrabold text-emerald-600 mt-2">
-              {activeCount}
-            </p>
-            <p className="text-xs text-slate-400 mt-1">
-              Runs automatically every midnight IST
-            </p>
           </div>
 
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider">
-              <span>Successful Checks</span>
-              <CheckCircle2 className="h-4 w-4 text-sky-600" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Successful Checks
+            </span>
+            <div className="mt-2 flex items-baseline justify-between">
+              <span className="text-3xl font-extrabold text-blue-600">{successfulChecks}</span>
+              <span className="text-xs text-slate-500">Arbitrage engine active</span>
             </div>
-            <p className="text-3xl font-extrabold text-sky-600 mt-2">
-              {successCount}
-            </p>
-            <p className="text-xs text-slate-400 mt-1">
-              Arbitrage Engine active / clicked
-            </p>
           </div>
 
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider">
-              <span>Run All Now</span>
-              <Shield className="h-4 w-4 text-blue-600" />
-            </div>
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Batch Execution
+            </span>
             <button
-              onClick={handleRunAllActive}
-              disabled={runningAll || activeCount === 0}
-              className="w-full mt-3 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-xs font-semibold text-white shadow-md shadow-emerald-600/20 transition"
+              onClick={handleRunAll}
+              disabled={runningAll || activeBots === 0}
+              className="mt-2 w-full py-2.5 px-4 rounded-xl font-semibold text-xs text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {runningAll ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Running Bot For All...
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Running All...
                 </>
               ) : (
                 <>
-                  <Play className="h-4 w-4" />
+                  <Play className="w-4 h-4" />
                   Test All Active IDs Now
                 </>
               )}
@@ -526,350 +317,282 @@ export default function AdminDashboardPage() {
           </div>
         </div>
 
-        {/* Status Notification Banner */}
-        {banner && (
-          <div
-            className={`flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-sm font-medium ${
-              banner.type === "success"
-                ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                : "bg-rose-50 border-rose-200 text-rose-800"
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              {banner.type === "success" ? (
-                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-              ) : (
-                <XCircle className="h-4 w-4 text-rose-600 shrink-0" />
-              )}
-              <span>{banner.text}</span>
-            </div>
-            <button
-              onClick={() => setBanner(null)}
-              className="text-slate-400 hover:text-slate-600"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-
-        {/* Accounts Table - Clean White */}
-        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-md shadow-slate-200/50">
+        {/* Registered Users Table */}
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
             <div>
               <h2 className="text-base font-bold text-slate-900">
-                Configured Accounts ({users.length})
+                Registered Users & Linked Bot Accounts ({users.length})
               </h2>
-              <p className="text-xs text-slate-500">
-                Shows daily login status, Arbitrage Engine state, and click history.
+              <p className="text-xs text-slate-500 mt-0.5">
+                Users register themselves, connect their XPR3T ID, and can be inspected via Ghost Login.
               </p>
             </div>
             <button
               onClick={fetchUsers}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 transition"
+              disabled={loading}
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 transition"
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
               Refresh
             </button>
           </div>
 
-          {loading ? (
-            <div className="p-12 flex flex-col items-center justify-center text-slate-400 gap-3">
-              <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
-              <span className="text-sm">Loading users...</span>
-            </div>
-          ) : users.length === 0 ? (
-            <div className="p-12 text-center space-y-2">
-              <p className="text-sm font-semibold text-slate-700">No Accounts Added Yet</p>
-              <p className="text-xs text-slate-500">
-                Enter an Agent Login-ID and Password above to start automated runs.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-500 bg-slate-50/80">
-                    <th className="py-3.5 px-6">Agent Login-ID</th>
-                    <th className="py-3.5 px-4">Routine Status</th>
-                    <th className="py-3.5 px-4">Daily Run &amp; Click Detail</th>
-                    <th className="py-3.5 px-6 text-right">Actions</th>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-slate-600">
+              <thead className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                <tr>
+                  <th className="py-3 px-6">User Email</th>
+                  <th className="py-3 px-6">Linked XPR3T ID</th>
+                  <th className="py-3 px-6">Routine Status</th>
+                  <th className="py-3 px-6">Daily Run & Click Detail</th>
+                  <th className="py-3 px-6 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {users.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-12 text-center text-slate-400">
+                      {loading ? "Loading users..." : "No users registered yet."}
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-sm">
-                  {users.map((user) => {
-                    const isRunning =
-                      runningIds[user.id] || user.lastRunStatus === "running";
-                    const isLogOpen = expandedLogUserId === user.id;
-                    const isWrongCredentials =
-                      user.lastRunMessage?.toLowerCase().includes("wrong username") ||
-                      user.lastRunMessage?.toLowerCase().includes("invalid credentials");
+                ) : (
+                  users.map((user) => {
+                    const isRunning = runningIds[user.id];
+                    const isGhosting = ghostingId === user.id;
+                    const label = user.xpr3tUsername || user.email;
 
                     return (
-                      <React.Fragment key={user.id}>
-                        <tr className="hover:bg-slate-50 transition">
-                          <td className="py-4 px-6">
-                            <div className="font-bold text-slate-900 font-mono text-base">
-                              {user.username}
-                            </div>
-                            <div className="text-[11px] text-slate-400">
-                              Added: {new Date(user.createdAt).toLocaleDateString()}
-                            </div>
-                          </td>
-
-                          <td className="py-4 px-4">
-                            <button
-                              type="button"
-                              onClick={() => handleToggleStatus(user)}
-                              title="Click to toggle Active / Inactive"
-                              className={`px-3 py-1 rounded-full text-xs font-semibold border transition ${
-                                user.status === "active"
-                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
-                                  : "bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200"
-                              }`}
-                            >
-                              {user.status === "active"
-                                ? "● Active (12 AM IST)"
-                                : "○ Inactive"}
-                            </button>
-                          </td>
-
-                          <td className="py-4 px-4">
-                            {user.lastRunAt ? (
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  {user.lastRunStatus === "success" ? (
-                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600">
-                                      <CheckCircle2 className="h-3.5 w-3.5" />
-                                      Success
-                                    </span>
-                                  ) : user.lastRunStatus === "running" ? (
-                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-600">
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                      Checking...
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-600">
-                                      <AlertTriangle className="h-3.5 w-3.5" />
-                                      {isWrongCredentials
-                                        ? "Wrong username or password"
-                                        : "Login Failed"}
-                                    </span>
-                                  )}
-                                  <span className="text-xs text-slate-400 flex items-center gap-1">
-                                    <Clock className="h-3 w-3" />
-                                    {new Date(user.lastRunAt).toLocaleString()}
-                                  </span>
-                                </div>
-                                {user.lastRunMessage && (
-                                  <p
-                                    className={`text-xs max-w-md truncate ${
-                                      isWrongCredentials
-                                        ? "text-rose-600 font-semibold"
-                                        : "text-slate-600"
-                                    }`}
-                                    title={user.lastRunMessage}
-                                  >
-                                    {user.lastRunMessage}
-                                  </p>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-slate-400 italic">
-                                Ready for next 12:00 AM IST cycle
+                      <tr key={user.id} className="hover:bg-slate-50/60 transition">
+                        {/* User Email */}
+                        <td className="py-4 px-6">
+                          <div className="font-semibold text-slate-900 text-sm">
+                            {user.email}
+                          </div>
+                          <div className="text-xs text-slate-400">
+                            Registered: {new Date(user.createdAt).toLocaleDateString("en-IN")}
+                            {user.role === "admin" && (
+                              <span className="ml-2 px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded font-semibold text-[10px]">
+                                ADMIN
                               </span>
                             )}
-                          </td>
+                          </div>
+                        </td>
 
-                          <td className="py-4 px-6 text-right">
-                            <div className="inline-flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => handleTriggerUser(user)}
-                                disabled={isRunning}
-                                title="Run bot test now"
-                                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-xs font-bold text-amber-800 transition"
-                              >
-                                {isRunning ? (
-                                  <>
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    Checking...
-                                  </>
-                                ) : (
-                                  <>
-                                    <Zap className="h-3.5 w-3.5 text-amber-600" />
-                                    Test Click
-                                  </>
-                                )}
-                              </button>
+                        {/* Linked XPR3T ID */}
+                        <td className="py-4 px-6">
+                          {user.xpr3tUsername ? (
+                            <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">
+                              {user.xpr3tUsername}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-400 italic">
+                              Not linked yet
+                            </span>
+                          )}
+                        </td>
 
-                              <button
-                                onClick={() =>
-                                  setExpandedLogUserId(
-                                    isLogOpen ? null : user.id
-                                  )
-                                }
-                                title="View daily history logs"
-                                className={`p-2 rounded-xl border text-xs transition ${
-                                  isLogOpen
-                                    ? "bg-slate-200 border-slate-300 text-slate-900"
-                                    : "bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-600"
-                                }`}
-                              >
-                                <History className="h-4 w-4" />
-                              </button>
+                        {/* Routine Status */}
+                        <td className="py-4 px-6">
+                          {user.xpr3tUsername ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                              Active (12 AM IST)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+                              Awaiting XPR3T Setup
+                            </span>
+                          )}
+                        </td>
 
-                              <button
-                                onClick={() => openEditModal(user)}
-                                title="Edit password or status"
-                                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-600 transition"
-                              >
-                                <Edit3 className="h-4 w-4" />
-                              </button>
-
-                              <button
-                                onClick={() => handleDeleteUser(user)}
-                                title="Delete account"
-                                className="p-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 transition"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
+                        {/* Daily Run & Click Detail */}
+                        <td className="py-4 px-6 max-w-md">
+                          {user.lastRunStatus === "running" ? (
+                            <div className="flex items-center gap-1.5 text-xs text-blue-600 font-medium">
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              Running automated check...
                             </div>
-                          </td>
-                        </tr>
-
-                        {/* Daily Run & Click History Accordion */}
-                        {isLogOpen && (
-                          <tr className="bg-slate-50/80">
-                            <td colSpan={4} className="px-6 py-4">
-                              <div className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2 flex items-center gap-1.5">
-                                <History className="h-3.5 w-3.5 text-blue-600" />
-                                Daily Login &amp; Click History for {user.username}
+                          ) : user.lastRunStatus === "success" ? (
+                            <div>
+                              <div className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                {user.lastRunMessage?.includes("View Trade")
+                                  ? "Engine already active (View Trade)"
+                                  : "Start Engine Triggered"}
                               </div>
-                              {!user.logs || user.logs.length === 0 ? (
-                                <p className="text-xs text-slate-500 italic">
-                                  No previous run history yet.
-                                </p>
-                              ) : (
-                                <div className="space-y-1.5">
-                                  {user.logs.map((log) => (
-                                    <div
-                                      key={log.id}
-                                      className="flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-lg bg-white border border-slate-200 text-xs shadow-sm"
-                                    >
-                                      <div className="flex items-center gap-2">
-                                        <span
-                                          className={`px-2 py-0.5 rounded font-bold text-[10px] ${
-                                            log.status === "success"
-                                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                              : "bg-rose-50 text-rose-700 border border-rose-200"
-                                          }`}
-                                        >
-                                          {log.status.toUpperCase()}
-                                        </span>
-                                        <span className="text-slate-800 font-medium">
-                                          {log.message}
-                                        </span>
-                                      </div>
-                                      <span className="text-slate-400 shrink-0">
-                                        {new Date(
-                                          log.executedAt
-                                        ).toLocaleString()}
-                                      </span>
-                                    </div>
-                                  ))}
+                              {user.lastRunAt && (
+                                <div className="text-[11px] text-slate-400 mt-0.5">
+                                  {new Date(user.lastRunAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
                                 </div>
                               )}
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
+                            </div>
+                          ) : user.lastRunStatus === "failed" ? (
+                            <div>
+                              <div className="flex items-center gap-1 text-xs font-semibold text-red-600">
+                                <XCircle className="w-3.5 h-3.5" />
+                                {user.lastRunMessage?.startsWith("Wrong username or password")
+                                  ? "Wrong username or password"
+                                  : "Check Failed"}
+                              </div>
+                              <div className="text-[11px] text-red-500 line-clamp-1 mt-0.5 font-mono">
+                                {user.lastRunMessage}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-400 italic">
+                              Ready for next 12:00 AM IST cycle
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Actions */}
+                        <td className="py-4 px-6 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {/* Ghost Login Button */}
+                            <button
+                              onClick={() => handleGhostLogin(user.id, user.email)}
+                              disabled={isGhosting}
+                              title="Ghost Login into this user's dashboard"
+                              className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition disabled:opacity-50"
+                            >
+                              {isGhosting ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <LogIn className="w-3.5 h-3.5" />
+                              )}
+                              <span>Ghost Login</span>
+                            </button>
+
+                            {/* Test Click */}
+                            {user.xpr3tUsername && (
+                              <button
+                                onClick={() => handleTriggerUser(user.id, label)}
+                                disabled={isRunning}
+                                title="Run instant test check"
+                                className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 transition disabled:opacity-50"
+                              >
+                                {isRunning ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Zap className="w-3.5 h-3.5" />
+                                )}
+                                <span>Test Click</span>
+                              </button>
+                            )}
+
+                            {/* History */}
+                            <button
+                              onClick={() => {
+                                setHistoryUser(user);
+                                setShowHistoryModal(true);
+                              }}
+                              title="View Click History"
+                              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition"
+                            >
+                              <History className="w-4 h-4" />
+                            </button>
+
+                            {/* Delete */}
+                            {user.role !== "admin" && (
+                              <button
+                                onClick={() => handleDeleteUser(user.id, user.email)}
+                                title="Delete user"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
                     );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </main>
 
-      {/* Edit User Modal */}
-      {editingUser && (
+      {/* History Modal */}
+      {showHistoryModal && historyUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-base font-bold text-slate-900">
-                Edit Credentials: {editingUser.username}
-              </h3>
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-2xl w-full p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  Execution History: {historyUser.email}
+                </h3>
+                {historyUser.xpr3tUsername && (
+                  <p className="text-xs text-slate-500 font-mono">
+                    Linked ID: {historyUser.xpr3tUsername}
+                  </p>
+                )}
+              </div>
               <button
-                onClick={() => setEditingUser(null)}
+                onClick={() => setShowHistoryModal(false)}
                 className="text-slate-400 hover:text-slate-600"
               >
-                <X className="h-5 w-5" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveEdit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Agent Login-ID
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editUsername}
-                  onChange={(e) => setEditUsername(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-blue-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                  New Password (leave blank to keep current)
-                </label>
-                <input
-                  type="password"
-                  value={editPassword}
-                  onChange={(e) => setEditPassword(e.target.value)}
-                  placeholder="••••••••••••"
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-blue-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Daily Automation Status
-                </label>
-                <select
-                  value={editStatus}
-                  onChange={(e) =>
-                    setEditStatus(e.target.value as "active" | "inactive")
-                  }
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-300 rounded-xl text-sm text-slate-900 focus:outline-none focus:border-blue-600"
-                >
-                  <option value="active">Active (Daily 12:00 AM IST)</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </div>
-
-              <div className="pt-3 flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setEditingUser(null)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-600"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingEdit}
-                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-xs font-semibold text-white shadow-md shadow-blue-600/20"
-                >
-                  {savingEdit && (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <div className="max-h-96 overflow-y-auto">
+              <table className="w-full text-left text-xs text-slate-600">
+                <thead className="bg-slate-50 uppercase text-slate-500 border-b border-slate-200">
+                  <tr>
+                    <th className="py-2.5 px-3">Timestamp (IST)</th>
+                    <th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3">Outcome Message</th>
+                    <th className="py-2.5 px-3">Duration</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-mono">
+                  {historyUser.logs && historyUser.logs.length > 0 ? (
+                    historyUser.logs.map((log) => (
+                      <tr key={log.id} className="hover:bg-slate-50">
+                        <td className="py-2.5 px-3 whitespace-nowrap text-slate-500">
+                          {new Date(log.executedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              log.status === "success"
+                                ? "bg-emerald-100 text-emerald-800"
+                                : "bg-red-100 text-red-800"
+                            }`}
+                          >
+                            {log.status.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 font-sans text-slate-800">
+                          {log.message}
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-500">
+                          {log.durationMs ? `${log.durationMs}ms` : "-"}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-slate-400 font-sans">
+                        No history records found.
+                      </td>
+                    </tr>
                   )}
-                  Save Changes
-                </button>
-              </div>
-            </form>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setShowHistoryModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

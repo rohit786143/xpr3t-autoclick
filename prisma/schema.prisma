@@ -8,29 +8,30 @@ datasource db {
 }
 
 model User {
-  id                String   @id @default(cuid())
-  username          String
-  password          String   // Hashed using bcrypt
-  encryptedPassword String?  // AES-256-GCM encrypted password for Playwright automated login
-  targetWebsiteUrl  String   @default("https://xpr3t.com/Sign-in.html")
-  buttonSelector    String   @default("")
-  usernameSelector  String   @default("#inputEmail")
-  passwordSelector  String   @default("#inputPassword")
-  submitSelector    String   @default("#submit-login")
-  status            String   @default("active") // "active" | "inactive"
+  id                String    @id @default(cuid())
+  email             String    @unique
+  portalPassword    String    // Hashed password for portal login
+  role              String    @default("user") // "user" | "admin"
+  
+  // Single linked XPR3T account (Added by user after login)
+  xpr3tUsername     String?
+  xpr3tPassword     String?   // Hashed for records
+  encryptedPassword String?   // AES-256-GCM encrypted for Playwright automated login
+  targetWebsiteUrl  String    @default("https://xpr3t.com/Sign-in.html")
+  buttonSelector    String    @default("#btnArbitrageStart")
+  status            String    @default("active") // "active" | "inactive"
+  
   lastRunAt         DateTime?
-  lastRunStatus     String?  // "success" | "failed" | "running"
+  lastRunStatus     String?   // "success" | "failed" | "running"
   lastRunMessage    String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  logs              RunLog[]
-}
+  
+  // Password reset fields
+  resetToken        String?
+  resetTokenExpiry  DateTime?
 
-model Admin {
-  id        String   @id @default(cuid())
-  username  String   @unique
-  password  String   // Hashed using bcrypt
-  createdAt DateTime @default(now())
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  logs              RunLog[]
 }
 
 model RunLog {

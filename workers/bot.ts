@@ -48,10 +48,23 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
     throw new Error(`User with ID "${userId}" not found.`);
   }
 
+  const accountIdentifier = user.xpr3tUsername || user.email;
+
+  if (!user.xpr3tUsername || !user.encryptedPassword) {
+    return {
+      userId,
+      username: accountIdentifier,
+      success: false,
+      message: "No XPR3T account linked yet. Please add your XPR3T Login ID & Password.",
+      durationMs: Date.now() - startTime,
+      executedAt: new Date(),
+    };
+  }
+
   if (activeUserLocks.has(userId)) {
     return {
       userId,
-      username: user.username,
+      username: accountIdentifier,
       success: false,
       message: "A bot session is already running for this user.",
       durationMs: Date.now() - startTime,
@@ -109,7 +122,7 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
     const page =
       context.pages().length > 0 ? context.pages()[0] : await context.newPage();
 
-    console.log(`[Bot][${user.username}] Navigating to Dashboard / Sign-in...`);
+    console.log(`[Bot][${accountIdentifier}] Navigating to Dashboard / Sign-in...`);
     await page.goto("https://xpr3t.com/Jmd810vPa67mEL/Dashboard.html", {
       waitUntil: "domcontentloaded",
       timeout: 30000,
@@ -123,7 +136,7 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
       (await page.locator("#inputEmail").isVisible({ timeout: 2000 }).catch(() => false));
 
     if (isLoginPage) {
-      console.log(`[Bot][${user.username}] Login required. Filling credentials...`);
+      console.log(`[Bot][${accountIdentifier}] Login required. Filling credentials...`);
 
       const plainPassword = decryptTargetPassword(user.encryptedPassword);
       if (!plainPassword) {
@@ -135,7 +148,7 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
       const submitButton = page.locator("#submit-login").first();
 
       await usernameInput.fill("");
-      await usernameInput.fill(user.username);
+      await usernameInput.fill(user.xpr3tUsername);
       await passwordInput.fill("");
       await passwordInput.fill(plainPassword);
 
@@ -182,7 +195,7 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
     }
 
     // Wait for Arbitrage Engine check to complete on Dashboard
-    console.log(`[Bot][${user.username}] Checking Arbitrage Engine button...`);
+    console.log(`[Bot][${accountIdentifier}] Checking Arbitrage Engine button...`);
     await page.waitForTimeout(2500);
 
     const arbitrageBtn = page.locator("#btnArbitrageStart");
@@ -195,13 +208,13 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
       btnText = (await arbitrageBtn.textContent().catch(() => ""))?.trim() || "";
     }
 
-    console.log(`[Bot][${user.username}] Current Arbitrage button text: "${btnText}"`);
+    console.log(`[Bot][${accountIdentifier}] Current Arbitrage button text: "${btnText}"`);
 
     let finalMessage = "";
 
     if (btnText.toLowerCase().includes("start")) {
       // Need to click Start Engine!
-      console.log(`[Bot][${user.username}] "Start Now" detected! Clicking Arbitrage Start Engine button...`);
+      console.log(`[Bot][${accountIdentifier}] "Start Now" detected! Clicking Arbitrage Start Engine button...`);
       await arbitrageBtn.click();
       await page.waitForTimeout(3000);
 
@@ -209,7 +222,7 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
       finalMessage = `Clicked Start Engine successfully! Daily trade activated. (${durationMs}ms)`;
     } else if (btnText.toLowerCase().includes("view trade")) {
       // Already active
-      console.log(`[Bot][${user.username}] "View Trade" detected! Already started for today.`);
+      console.log(`[Bot][${accountIdentifier}] "View Trade" detected! Already started for today.`);
       const durationMs = Date.now() - startTime;
       finalMessage = `Engine already active for today (View Trade). (${durationMs}ms)`;
     } else {
@@ -244,11 +257,11 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
       }),
     ]);
 
-    console.log(`[Bot][${user.username}] SUCCESS: ${finalMessage}`);
+    console.log(`[Bot][${accountIdentifier}] SUCCESS: ${finalMessage}`);
 
     return {
       userId: user.id,
-      username: user.username,
+      username: accountIdentifier,
       success: true,
       message: finalMessage,
       durationMs,
@@ -265,7 +278,7 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
       displayError = "Wrong username or password";
     }
 
-    console.error(`[Bot][${user.username}] FAILED: ${displayError}`);
+    console.error(`[Bot][${accountIdentifier}] FAILED: ${displayError}`);
 
     await prisma.$transaction([
       prisma.user.update({
@@ -289,7 +302,7 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
 
     return {
       userId: user.id,
-      username: user.username,
+      username: accountIdentifier,
       success: false,
       message: displayError,
       durationMs,
@@ -308,7 +321,10 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
 
 export async function runAllActiveUsers(): Promise<BotRunResult[]> {
   const activeUsers = await prisma.user.findMany({
-    where: { status: "active" },
+    where: { 
+      status: "active",
+      xpr3tUsername: { not: null },
+    },
     orderBy: { createdAt: "asc" },
   });
 

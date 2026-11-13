@@ -1,62 +1,69 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/db";
-import { hashPassword, verifyPassword } from "@/lib/crypto";
-import { SESSION_COOKIE_NAME, signAdminToken } from "@/lib/auth";
+import { verifyPassword } from "@/lib/crypto";
+import { signSessionToken, SESSION_COOKIE_NAME } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const username = (body.username || "").trim();
+    const loginIdentifier = (body.loginIdentifier || body.username || body.email || "").trim().toLowerCase();
     const password = body.password || "";
 
-    if (!username || !password) {
+    if (!loginIdentifier || !password) {
       return NextResponse.json(
-        { error: "Username and password are required." },
+        { error: "Email / Username and Password are required." },
         { status: 400 }
       );
     }
 
-    // Ensure default admin exists in DB if none seeded yet
-    const defaultUsername = process.env.ADMIN_USERNAME || "admin";
-    const defaultPassword = process.env.ADMIN_PASSWORD || "AdminPassword123!";
+    // Allow login by either Portal Email or XPR3T Username (or 'admin')
+    let user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: loginIdentifier },
+          { xpr3tUsername: loginIdentifier },
+        ],
+      },
+    });
 
-    let admin = await prisma.admin.findUnique({ where: { username } });
-
-    if (!admin && username === defaultUsername) {
-      const adminCount = await prisma.admin.count();
-      if (adminCount === 0) {
-        admin = await prisma.admin.create({
-          data: {
-            username: defaultUsername,
-            password: await hashPassword(defaultPassword),
-          },
-        });
-      }
+    // Special check: If user typed 'admin', resolve to admin user
+    if (!user && (loginIdentifier === "admin" || loginIdentifier.includes("admin"))) {
+      user = await prisma.user.findFirst({
+        where: { role: "admin" },
+      });
     }
 
-    if (!admin) {
+    if (!user) {
       return NextResponse.json(
-        { error: "Invalid admin credentials." },
+        { error: "Invalid Email/Username or Password." },
         { status: 401 }
       );
     }
 
-    const isValid = await verifyPassword(password, admin.password);
+    const isValid = await verifyPassword(password, user.portalPassword);
     if (!isValid) {
       return NextResponse.json(
-        { error: "Invalid admin credentials." },
+        { error: "Invalid Email/Username or Password." },
         { status: 401 }
       );
     }
 
-    const token = await signAdminToken({
-      id: admin.id,
-      username: admin.username,
+    const token = await signSessionToken({
+      id: user.id,
+      email: user.email,
+      role: user.role as "admin" | "user",
+      xpr3tUsername: user.xpr3tUsername || undefined,
     });
 
     const response = NextResponse.json({
       success: true,
-      admin: { id: admin.id, username: admin.username },
+      role: user.role,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        xpr3tUsername: user.xpr3tUsername,
+      },
     });
 
     response.cookies.set(SESSION_COOKIE_NAME, token, {
@@ -64,16 +71,15 @@ export async function POST(request: NextRequest) {
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
       path: "/",
-      maxAge: 60 * 60 * 24, // 24 hours
+      maxAge: 60 * 60 * 24 * 7,
     });
 
     return response;
   } catch (error) {
-    console.error("[Auth Login Error]:", error);
+    console.error("[Login Error]:", error);
     return NextResponse.json(
       { error: "Internal server error during login." },
       { status: 500 }
     );
   }
 }
-

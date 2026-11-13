@@ -61,12 +61,11 @@ export async function PATCH(
     return NextResponse.json({
       user: {
         id: updated.id,
-        username: updated.username,
+        email: updated.email,
+        role: updated.role,
+        xpr3tUsername: updated.xpr3tUsername,
         targetWebsiteUrl: updated.targetWebsiteUrl,
         buttonSelector: updated.buttonSelector,
-        usernameSelector: updated.usernameSelector,
-        passwordSelector: updated.passwordSelector,
-        submitSelector: updated.submitSelector,
         status: updated.status,
         lastRunAt: updated.lastRunAt,
         lastRunStatus: updated.lastRunStatus,

@@ -1,7 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 
-export const SESSION_COOKIE_NAME = "autoclick_admin_session";
+export const SESSION_COOKIE_NAME = "autoclick_session";
 
 function getJwtSecretKey(): Uint8Array {
   const secret =
@@ -9,47 +9,56 @@ function getJwtSecretKey(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
-export interface AdminTokenPayload {
+export interface SessionPayload {
   sub: string;
-  username: string;
-  role: "admin";
+  email: string;
+  role: "admin" | "user";
+  name?: string;
+  xpr3tUsername?: string;
+  isGhost?: boolean;
+  originalAdminId?: string;
   iat?: number;
   exp?: number;
 }
 
-export async function signAdminToken(payload: {
+export async function signSessionToken(payload: {
   id: string;
-  username: string;
+  email: string;
+  role: "admin" | "user";
+  name?: string;
+  xpr3tUsername?: string;
+  isGhost?: boolean;
+  originalAdminId?: string;
 }): Promise<string> {
   return new SignJWT({
     sub: payload.id,
-    username: payload.username,
-    role: "admin",
+    email: payload.email,
+    role: payload.role,
+    name: payload.name || "",
+    xpr3tUsername: payload.xpr3tUsername || "",
+    isGhost: !!payload.isGhost,
+    originalAdminId: payload.originalAdminId || "",
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("24h")
+    .setExpirationTime("7d")
     .sign(getJwtSecretKey());
 }
 
-export async function verifyAdminToken(
+export async function verifySessionToken(
   token: string
-): Promise<AdminTokenPayload | null> {
+): Promise<SessionPayload | null> {
   try {
     const { payload } = await jwtVerify(token, getJwtSecretKey());
-    if (payload.role !== "admin" || !payload.username) {
-      return null;
-    }
-    return payload as unknown as AdminTokenPayload;
+    return payload as unknown as SessionPayload;
   } catch {
     return null;
   }
 }
 
-export async function getAdminSession(): Promise<AdminTokenPayload | null> {
+export async function getSession(): Promise<SessionPayload | null> {
   const cookieStore = cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   if (!token) return null;
-  return verifyAdminToken(token);
+  return verifySessionToken(token);
 }
-
