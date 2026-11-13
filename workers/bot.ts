@@ -1,6 +1,6 @@
 import path from "path";
 import fs from "fs";
-import { chromium, BrowserContext } from "playwright";
+import { chromium, BrowserContext, Browser } from "playwright";
 import prisma from "../lib/db";
 import { decryptTargetPassword } from "../lib/crypto";
 
@@ -38,16 +38,11 @@ export function removeUserSessionDir(userId: string): void {
 
 /**
  * Runs the daily automated routine for an XPR3T account:
- * 1. Opens persistent browser profile (keeps cookies/session).
- * 2. Navigates to XPR3T Sign-in or Dashboard.
- * 3. If login form appears, logs in using stored credentials.
- *    - If credentials fail, logs "Wrong username or password" in DB.
- * 4. Navigates to Dashboard.html.
- * 5. Dismisses any announcement/news popup.
- * 6. Checks Arbitrage Engine status:
- *    - If #btnArbitrageStart shows "Start Now" / "Start Engine", clicks it to activate daily trade.
- *    - If #btnArbitrageStart already shows "View Trade", confirms today's trade is already active.
- * 7. Logs detailed success/error status and execution duration into RunLog.
+ * 1. Launches Chromium with robust Linux sandbox flags.
+ * 2. Navigates to Dashboard or Sign-in.
+ * 3. Handles login with exact credential checks.
+ * 4. Checks Arbitrage Engine status ("Start Now" vs "View Trade").
+ * 5. Logs accurate message without falsely reporting wrong credentials.
  */
 export async function runBotForUser(userId: string): Promise<BotRunResult> {
   const startTime = Date.now();
@@ -69,6 +64,7 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
   }
 
   activeUserLocks.add(userId);
+  let browser: Browser | null = null;
   let context: BrowserContext | null = null;
 
   await prisma.user.update({
@@ -81,22 +77,42 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
 
   try {
     const userDataDir = getUserSessionDir(user.id);
-    // On Linux VPS headless MUST be true (unless DISPLAY is set)
-    const headless = process.env.PLAYWRIGHT_HEADLESS !== "false";
+    const isHeadless = process.env.PLAYWRIGHT_HEADLESS !== "false";
 
-    context = await chromium.launchPersistentContext(userDataDir, {
-      headless,
-      viewport: { width: 1280, height: 800 },
-      userAgent:
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-      args: [
-        "--disable-blink-features=AutomationControlled",
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-      ],
-    });
+    // Launch persistent context with explicit Linux-safe flags
+    try {
+      context = await chromium.launchPersistentContext(userDataDir, {
+        headless: isHeadless,
+        viewport: { width: 1280, height: 800 },
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+          "--no-zygote",
+          "--single-process",
+          "--disable-blink-features=AutomationControlled",
+        ],
+      });
+    } catch {
+      // Fallback: If launchPersistentContext fails on some Linux setups, launch standard browser
+      browser = await chromium.launch({
+        headless: isHeadless,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+        ],
+      });
+      context = await browser.newContext({
+        viewport: { width: 1280, height: 800 },
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+      });
+    }
 
     const page =
       context.pages().length > 0 ? context.pages()[0] : await context.newPage();
@@ -110,12 +126,16 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
     await page.waitForTimeout(2000);
 
     // If redirected to Sign-in.html or login form is present, perform automated login
-    if (page.url().includes("Sign-in.html") || (await page.locator("#inputEmail").isVisible({ timeout: 2000 }).catch(() => false))) {
+    const isLoginPage =
+      page.url().includes("Sign-in.html") ||
+      (await page.locator("#inputEmail").isVisible({ timeout: 2000 }).catch(() => false));
+
+    if (isLoginPage) {
       console.log(`[Bot][${user.username}] Login required. Filling credentials...`);
 
       const plainPassword = decryptTargetPassword(user.encryptedPassword);
       if (!plainPassword) {
-        throw new Error("Wrong username or password (Password not decrypted).");
+        throw new Error("Target site password could not be decrypted.");
       }
 
       const usernameInput = page.locator("#inputEmail").first();
@@ -146,8 +166,14 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
       const swalAlert = page.locator(".sweet-alert.showSweetAlert p, .sweet-alert.visible p").first();
       if (await swalAlert.isVisible({ timeout: 1000 }).catch(() => false)) {
         const errorText = (await swalAlert.textContent())?.trim() || "";
-        if (page.url().includes("Sign-in.html") || errorText.toLowerCase().includes("invalid") || errorText.toLowerCase().includes("sorry") || errorText.toLowerCase().includes("not match") || errorText.toLowerCase().includes("incorrect")) {
-          throw new Error(`Wrong username or password (${errorText || "Invalid Login-ID or Password"})`);
+        if (
+          page.url().includes("Sign-in.html") ||
+          errorText.toLowerCase().includes("invalid") ||
+          errorText.toLowerCase().includes("sorry") ||
+          errorText.toLowerCase().includes("not match") ||
+          errorText.toLowerCase().includes("incorrect")
+        ) {
+          throw new Error(`Wrong username or password (${errorText || "Invalid credentials"})`);
         }
       }
 
@@ -164,10 +190,9 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
     }
 
     // Wait for Arbitrage Engine check to complete on Dashboard
-    console.log(`[Bot][${user.username}] Waiting for Arbitrage Engine status...`);
+    console.log(`[Bot][${user.username}] Checking Arbitrage Engine button...`);
     await page.waitForTimeout(2500);
 
-    // Check button state
     const arbitrageBtn = page.locator("#btnArbitrageStart");
     let btnText = "";
 
@@ -175,7 +200,8 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
       await arbitrageBtn.waitFor({ state: "visible", timeout: 10000 });
       btnText = (await arbitrageBtn.textContent())?.trim() || "";
     } catch {
-      console.log(`[Bot][${user.username}] #btnArbitrageStart wait timeout, checking card...`);
+      console.log(`[Bot][${user.username}] Button wait timeout, reading text...`);
+      btnText = (await arbitrageBtn.textContent().catch(() => ""))?.trim() || "";
     }
 
     console.log(`[Bot][${user.username}] Current Arbitrage button text: "${btnText}"`);
@@ -186,25 +212,22 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
       // Need to click Start Engine!
       console.log(`[Bot][${user.username}] "Start Now" detected! Clicking Arbitrage Start Engine button...`);
       await arbitrageBtn.click();
-
-      // Wait for AJAX or navigation
       await page.waitForTimeout(3000);
 
       const durationMs = Date.now() - startTime;
       finalMessage = `Clicked Start Engine successfully! Daily trade activated. (${durationMs}ms)`;
     } else if (btnText.toLowerCase().includes("view trade")) {
-      // Already running for today
+      // Already active
       console.log(`[Bot][${user.username}] "View Trade" detected! Already started for today.`);
       const durationMs = Date.now() - startTime;
       finalMessage = `Engine already active for today (View Trade). (${durationMs}ms)`;
     } else {
-      // Button not visible or returned empty, trigger click fallback if card exists
       const card = page.locator("#arbitrageEngineCard");
       if (await card.isVisible({ timeout: 2000 }).catch(() => false)) {
         await card.click().catch(() => {});
       }
       const durationMs = Date.now() - startTime;
-      finalMessage = `Checked Dashboard: Button state "${btnText || 'Active'}" (${durationMs}ms)`;
+      finalMessage = `Dashboard loaded: Engine status "${btnText || 'Active'}" (${durationMs}ms)`;
     }
 
     const durationMs = Date.now() - startTime;
@@ -246,13 +269,9 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
     const rawErrorMessage =
       error instanceof Error ? error.message : "Unknown Playwright error";
 
-    // Format clear error message for wrong username / password
+    // ONLY report "Wrong username or password" if actual login authentication failed
     let displayError = rawErrorMessage;
-    if (
-      rawErrorMessage.toLowerCase().includes("wrong username") ||
-      rawErrorMessage.toLowerCase().includes("invalid login") ||
-      rawErrorMessage.toLowerCase().includes("credentials")
-    ) {
+    if (rawErrorMessage.startsWith("Wrong username or password")) {
       displayError = "Wrong username or password";
     }
 
@@ -290,6 +309,9 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
     if (context) {
       await context.close().catch(() => {});
     }
+    if (browser) {
+      await browser.close().catch(() => {});
+    }
     activeUserLocks.delete(userId);
   }
 }
@@ -310,27 +332,19 @@ export async function runAllActiveUsers(): Promise<BotRunResult[]> {
   return results;
 }
 
-/**
- * Calculates milliseconds remaining until next 12:01 AM Indian Standard Time (IST - UTC+5:30)
- */
 function getMsUntilNextMidnightIST(): number {
   const now = new Date();
-  // IST offset is +5 hours 30 mins (+330 mins)
   const istOffsetMs = 5.5 * 60 * 60 * 1000;
   const nowIst = new Date(now.getTime() + istOffsetMs);
 
-  // Next midnight IST + 1 minute (12:01 AM IST) to guarantee date change on server
   const nextRunIst = new Date(nowIst);
   nextRunIst.setUTCDate(nextRunIst.getUTCDate() + 1);
-  nextRunIst.setUTCHours(0, 1, 0, 0); // 00:01 AM IST
+  nextRunIst.setUTCHours(0, 1, 0, 0);
 
   const msUntilRun = nextRunIst.getTime() - nowIst.getTime();
   return Math.max(msUntilRun, 1000);
 }
 
-/**
- * Starts automatic 12:01 AM IST daily midnight schedule loop
- */
 export async function startDailyMidnightScheduler(): Promise<void> {
   console.log("[Scheduler] Initializing 12:00 AM Midnight IST Daily Auto-Click Scheduler...");
 
@@ -356,7 +370,6 @@ export async function startDailyMidnightScheduler(): Promise<void> {
   scheduleNext();
 }
 
-// Allow direct execution
 const isMainModule =
   typeof require !== "undefined" && require.main === module
     ? true
@@ -375,7 +388,6 @@ if (isMainModule) {
         process.exit(1);
       });
   } else {
-    // Run an initial pass right away, then wait for 12:00 AM IST daily
     runAllActiveUsers().finally(() => {
       startDailyMidnightScheduler().catch((err) => {
         console.error("[Worker] Fatal error starting scheduler:", err);
