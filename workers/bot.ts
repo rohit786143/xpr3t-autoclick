@@ -81,14 +81,21 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
 
   try {
     const userDataDir = getUserSessionDir(user.id);
-    const headless = process.env.PLAYWRIGHT_HEADLESS === "true";
+    // On Linux VPS headless MUST be true (unless DISPLAY is set)
+    const headless = process.env.PLAYWRIGHT_HEADLESS !== "false";
 
     context = await chromium.launchPersistentContext(userDataDir, {
       headless,
       viewport: { width: 1280, height: 800 },
       userAgent:
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-      args: ["--disable-blink-features=AutomationControlled", "--no-sandbox"],
+      args: [
+        "--disable-blink-features=AutomationControlled",
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+      ],
     });
 
     const page =
