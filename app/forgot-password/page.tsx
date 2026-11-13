@@ -37,10 +37,7 @@ export default function ForgotPasswordPage() {
         throw new Error(data.error || "Failed to process request.");
       }
 
-      setMessage(data.message || "Reset code generated.");
-      if (data.resetCode) {
-        setToken(data.resetCode);
-      }
+      setMessage(data.message || "Reset code sent to your email.");
       setStep("reset");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error requesting reset.");
@@ -144,11 +141,12 @@ export default function ForgotPasswordPage() {
                 </label>
                 <input
                   type="email"
+                  autoComplete="off"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="Enter your registered email"
-                  className="w-full px-4 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                  className="w-full px-4 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-black placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 />
               </div>
 
@@ -161,18 +159,19 @@ export default function ForgotPasswordPage() {
               </button>
             </form>
           ) : (
-            <form onSubmit={handleResetPassword} className="space-y-4">
+            <form onSubmit={handleResetPassword} autoComplete="off" className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                   Reset Code (OTP)
                 </label>
                 <input
                   type="text"
+                  autoComplete="off"
                   required
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
-                  placeholder="Enter 6-digit code"
-                  className="w-full px-4 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition font-mono tracking-wider"
+                  placeholder="Enter 6-digit code from your email"
+                  className="w-full px-4 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-black placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition font-mono tracking-wider"
                 />
               </div>
 
@@ -182,11 +181,12 @@ export default function ForgotPasswordPage() {
                 </label>
                 <input
                   type="password"
+                  autoComplete="new-password"
                   required
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Enter new password (min 6 chars)"
-                  className="w-full px-4 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                  className="w-full px-4 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-black placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 />
               </div>
 
@@ -196,11 +196,12 @@ export default function ForgotPasswordPage() {
                 </label>
                 <input
                   type="password"
+                  autoComplete="new-password"
                   required
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Re-enter new password"
-                  className="w-full px-4 py-2.5 text-sm bg-slate-50 border border-slate-300 rounded-xl text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                  className="w-full px-4 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-black placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 />
               </div>
 
