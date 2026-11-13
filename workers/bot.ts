@@ -37,12 +37,8 @@ export function removeUserSessionDir(userId: string): void {
 }
 
 /**
- * Runs the daily automated routine for an XPR3T account:
- * 1. Launches Chromium with robust Linux sandbox flags.
- * 2. Navigates to Dashboard or Sign-in.
- * 3. Handles login with exact credential checks.
- * 4. Checks Arbitrage Engine status ("Start Now" vs "View Trade").
- * 5. Logs accurate message without falsely reporting wrong credentials.
+ * Runs the daily automated routine for an XPR3T account on Linux VPS:
+ * Uses robust headless=true with explicit Chromium flags for headless servers.
  */
 export async function runBotForUser(userId: string): Promise<BotRunResult> {
   const startTime = Date.now();
@@ -77,35 +73,31 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
 
   try {
     const userDataDir = getUserSessionDir(user.id);
-    const isHeadless = process.env.PLAYWRIGHT_HEADLESS !== "false";
 
-    // Launch persistent context with explicit Linux-safe flags
+    // Explicit Linux flags to bypass Missing X server / $DISPLAY
+    const linuxArgs = [
+      "--headless=new",
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--disable-software-rasterizer",
+      "--no-zygote",
+      "--disable-blink-features=AutomationControlled",
+    ];
+
     try {
       context = await chromium.launchPersistentContext(userDataDir, {
-        headless: isHeadless,
+        headless: true,
         viewport: { width: 1280, height: 800 },
         userAgent:
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-gpu",
-          "--no-zygote",
-          "--single-process",
-          "--disable-blink-features=AutomationControlled",
-        ],
+        args: linuxArgs,
       });
     } catch {
-      // Fallback: If launchPersistentContext fails on some Linux setups, launch standard browser
       browser = await chromium.launch({
-        headless: isHeadless,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-gpu",
-        ],
+        headless: true,
+        args: linuxArgs,
       });
       context = await browser.newContext({
         viewport: { width: 1280, height: 800 },
@@ -200,7 +192,6 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
       await arbitrageBtn.waitFor({ state: "visible", timeout: 10000 });
       btnText = (await arbitrageBtn.textContent())?.trim() || "";
     } catch {
-      console.log(`[Bot][${user.username}] Button wait timeout, reading text...`);
       btnText = (await arbitrageBtn.textContent().catch(() => ""))?.trim() || "";
     }
 
@@ -269,7 +260,6 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
     const rawErrorMessage =
       error instanceof Error ? error.message : "Unknown Playwright error";
 
-    // ONLY report "Wrong username or password" if actual login authentication failed
     let displayError = rawErrorMessage;
     if (rawErrorMessage.startsWith("Wrong username or password")) {
       displayError = "Wrong username or password";
