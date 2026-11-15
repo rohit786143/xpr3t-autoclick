@@ -122,6 +122,51 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * PATCH: Toggle Auto-Click ON ("active") or OFF ("inactive")
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const session = await getSession();
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const nextStatus = body.status === "active" ? "active" : "inactive";
+
+    await prisma.user.update({
+      where: { id: session.sub },
+      data: {
+        status: nextStatus,
+        ...(nextStatus === "inactive"
+          ? { lastRunMessage: "Auto-Click stopped by user." }
+          : { lastRunMessage: "Auto-Click started. Running check..." }),
+      },
+    });
+
+    if (nextStatus === "active") {
+      const result = await runBotForUser(session.sub);
+      return NextResponse.json({
+        success: true,
+        status: "active",
+        result,
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      status: "inactive",
+    });
+  } catch (error) {
+    console.error("[PATCH /api/user/account] Error:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to update status." },
+      { status: 500 }
+    );
+  }
+}
+
+/**
  * PUT: Trigger instant test run for this user's account
  */
 export async function PUT() {

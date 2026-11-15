@@ -36,6 +36,126 @@ export function removeUserSessionDir(userId: string): void {
   }
 }
 
+const LINUX_CHROMIUM_ARGS = [
+  "--headless=new",
+  "--no-sandbox",
+  "--disable-setuid-sandbox",
+  "--disable-dev-shm-usage",
+  "--disable-gpu",
+  "--disable-software-rasterizer",
+  "--no-zygote",
+  "--disable-blink-features=AutomationControlled",
+];
+
+const DESKTOP_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
+
+async function createHeadlessContext(
+  userDataDir?: string
+): Promise<{ browser: Browser | null; context: BrowserContext }> {
+  if (userDataDir) {
+    try {
+      const context = await chromium.launchPersistentContext(userDataDir, {
+        headless: true,
+        viewport: { width: 1280, height: 800 },
+        userAgent: DESKTOP_USER_AGENT,
+        args: LINUX_CHROMIUM_ARGS,
+      });
+      return { browser: null, context };
+    } catch {
+      // Fallback to ephemeral browser context if persistent launch fails
+    }
+  }
+
+  const browser = await chromium.launch({
+    headless: true,
+    args: LINUX_CHROMIUM_ARGS,
+  });
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 800 },
+    userAgent: DESKTOP_USER_AGENT,
+  });
+  return { browser, context };
+}
+
+/**
+ * Verifies XPR3T credentials live against https://xpr3t.com/Sign-in.html.
+ */
+export async function verifyXpr3tLogin(
+  xpr3tUsername: string,
+  plainPassword: string
+): Promise<{ valid: boolean; error?: string }> {
+  let browser: Browser | null = null;
+  let context: BrowserContext | null = null;
+
+  try {
+    const launched = await createHeadlessContext();
+    browser = launched.browser;
+    context = launched.context;
+
+    const page =
+      context.pages().length > 0 ? context.pages()[0] : await context.newPage();
+
+    await page.goto("https://xpr3t.com/Sign-in.html", {
+      waitUntil: "domcontentloaded",
+      timeout: 30000,
+    });
+
+    await page.locator("#inputEmail").first().fill(xpr3tUsername);
+    await page.locator("#inputPassword").first().fill(plainPassword);
+
+    const rememberCheckbox = page.locator("input[name='remember']").first();
+    if (await rememberCheckbox.isVisible({ timeout: 1000 }).catch(() => false)) {
+      await rememberCheckbox.check().catch(() => {});
+    }
+
+    await page.locator("#submit-login").first().click();
+
+    await Promise.race([
+      page.waitForURL((url) => !url.href.includes("Sign-in.html"), { timeout: 15000 }),
+      page
+        .locator(".sweet-alert.showSweetAlert, .sweet-alert.visible")
+        .waitFor({ state: "visible", timeout: 8000 }),
+    ]).catch(() => {});
+
+    await page.waitForTimeout(1500);
+
+    const swalAlert = page
+      .locator(".sweet-alert.showSweetAlert p, .sweet-alert.visible p")
+      .first();
+    if (await swalAlert.isVisible({ timeout: 1000 }).catch(() => false)) {
+      const errorText = (await swalAlert.textContent())?.trim() || "";
+      if (
+        page.url().includes("Sign-in.html") ||
+        errorText.toLowerCase().includes("invalid") ||
+        errorText.toLowerCase().includes("sorry") ||
+        errorText.toLowerCase().includes("not match") ||
+        errorText.toLowerCase().includes("incorrect")
+      ) {
+        return {
+          valid: false,
+          error: "Wrong username or password",
+        };
+      }
+    }
+
+    if (page.url().includes("Sign-in.html")) {
+      return {
+        valid: false,
+        error: "Wrong username or password",
+      };
+    }
+
+    return { valid: true };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Failed to verify XPR3T login.";
+    return { valid: false, error: msg };
+  } finally {
+    if (context) await context.close().catch(() => {});
+    if (browser) await browser.close().catch(() => {});
+  }
+}
+
 /**
  * Runs the daily automated routine for an XPR3T account on Linux VPS:
  * Uses robust headless=true with explicit Chromium flags for headless servers.
@@ -86,38 +206,9 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
 
   try {
     const userDataDir = getUserSessionDir(user.id);
-
-    // Explicit Linux flags to bypass Missing X server / $DISPLAY
-    const linuxArgs = [
-      "--headless=new",
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--disable-software-rasterizer",
-      "--no-zygote",
-      "--disable-blink-features=AutomationControlled",
-    ];
-
-    try {
-      context = await chromium.launchPersistentContext(userDataDir, {
-        headless: true,
-        viewport: { width: 1280, height: 800 },
-        userAgent:
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-        args: linuxArgs,
-      });
-    } catch {
-      browser = await chromium.launch({
-        headless: true,
-        args: linuxArgs,
-      });
-      context = await browser.newContext({
-        viewport: { width: 1280, height: 800 },
-        userAgent:
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-      });
-    }
+    const launched = await createHeadlessContext(userDataDir);
+    browser = launched.browser;
+    context = launched.context;
 
     const page =
       context.pages().length > 0 ? context.pages()[0] : await context.newPage();

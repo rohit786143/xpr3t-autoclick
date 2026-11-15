@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 export default function UniversalLoginPage() {
@@ -62,10 +61,10 @@ export default function UniversalLoginPage() {
           </div>
         </div>
         <h2 className="text-2xl font-bold tracking-tight text-slate-900">
-          User Login
+          XPR3T Auto-Clicker Login
         </h2>
         <p className="mt-1 text-sm text-slate-500">
-          Sign in to manage your automated 12:00 AM IST Arbitrage Engine
+          Sign in directly with your <span className="font-semibold text-slate-700">xpr3t.com</span> Login ID &amp; Password
         </p>
       </div>
 
@@ -83,7 +82,7 @@ export default function UniversalLoginPage() {
           <form onSubmit={handleSubmit} autoComplete="off" className="space-y-5">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                Portal Email or XPR3T Login ID
+                XPR3T Login ID
               </label>
               <div className="relative">
                 <input
@@ -93,7 +92,7 @@ export default function UniversalLoginPage() {
                   required
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder="Enter your email or XPR3T ID"
+                  placeholder="e.g. XP71457513"
                   className="w-full px-4 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-black placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 />
               </div>
@@ -137,25 +136,13 @@ export default function UniversalLoginPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                   </svg>
-                  Signing in...
+                  Verifying XPR3T Login...
                 </>
               ) : (
                 "Sign In"
               )}
             </button>
           </form>
-
-          <div className="mt-6 pt-6 border-t border-slate-100 text-center space-y-3">
-            <p className="text-xs font-medium text-slate-500">
-              New to XPR3T Auto-Clicker?
-            </p>
-            <Link
-              href="/register"
-              className="w-full py-2.5 px-4 rounded-xl font-semibold text-sm text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition flex items-center justify-center"
-            >
-              Register New Account
-            </Link>
-          </div>
         </div>
 
         <p className="text-center text-xs text-slate-400 mt-6">

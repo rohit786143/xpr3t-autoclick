@@ -306,17 +306,17 @@ export default function AdminDashboardPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Registered Users
+              Total Logged-in Users
             </span>
             <div className="mt-2 flex items-baseline justify-between">
               <span className="text-3xl font-extrabold text-slate-900">{totalUsers}</span>
-              <span className="text-xs text-slate-500">Self-registered via portal</span>
+              <span className="text-xs text-slate-500">Verified XPR3T logins</span>
             </div>
           </div>
 
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Linked Active Bot IDs
+              Active Auto-Click Users
             </span>
             <div className="mt-2 flex items-baseline justify-between">
               <span className="text-3xl font-extrabold text-emerald-600">{activeBots}</span>
@@ -491,14 +491,19 @@ export default function AdminDashboardPage() {
 
                         {/* Routine Status */}
                         <td className="py-4 px-6">
-                          {user.xpr3tUsername ? (
+                          {user.status === "active" && user.xpr3tUsername ? (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                               Active (12 AM IST)
                             </span>
+                          ) : user.xpr3tUsername ? (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                              Stopped
+                            </span>
                           ) : (
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
-                              Awaiting XPR3T Setup
+                              No XPR3T ID
                             </span>
                           )}
                         </td>
