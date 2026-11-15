@@ -414,15 +414,15 @@ export default function AdminDashboardPage() {
           </form>
         </div>
 
-        {/* Registered Users Table */}
+        {/* Logged-in Users Table */}
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
             <div>
               <h2 className="text-base font-bold text-slate-900">
-                Registered Users & Linked Bot Accounts ({users.length})
+                Logged-in Users &amp; Auto-Click Accounts ({users.length})
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Users register themselves, connect their XPR3T ID, and can be inspected via Ghost Login.
+                Every user who logs in at least once with their XPR3T ID &amp; password appears here automatically.
               </p>
             </div>
             <button
@@ -439,18 +439,17 @@ export default function AdminDashboardPage() {
             <table className="w-full text-left text-sm text-slate-600">
               <thead className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
                 <tr>
-                  <th className="py-3 px-6">User Email</th>
-                  <th className="py-3 px-6">Linked XPR3T ID</th>
-                  <th className="py-3 px-6">Routine Status</th>
-                  <th className="py-3 px-6">Daily Run & Click Detail</th>
+                  <th className="py-3 px-6">XPR3T Username</th>
+                  <th className="py-3 px-6">Auto-Click Status</th>
+                  <th className="py-3 px-6">Daily Run &amp; Click Detail</th>
                   <th className="py-3 px-6 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {users.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-12 text-center text-slate-400">
-                      {loading ? "Loading users..." : "No users registered yet."}
+                    <td colSpan={4} className="py-12 text-center text-slate-400">
+                      {loading ? "Loading users..." : "No users have logged in yet."}
                     </td>
                   </tr>
                 ) : (
@@ -461,32 +460,22 @@ export default function AdminDashboardPage() {
 
                     return (
                       <tr key={user.id} className="hover:bg-slate-50/60 transition">
-                        {/* User Email */}
+                        {/* XPR3T Username */}
                         <td className="py-4 px-6">
-                          <div className="font-semibold text-slate-900 text-sm">
-                            {user.email}
-                          </div>
-                          <div className="text-xs text-slate-400">
-                            Registered: {new Date(user.createdAt).toLocaleDateString("en-IN")}
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">
+                              {user.xpr3tUsername || user.email}
+                            </span>
                             {user.role === "admin" && (
-                              <span className="ml-2 px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded font-semibold text-[10px]">
+                              <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded font-semibold text-[10px]">
                                 ADMIN
                               </span>
                             )}
                           </div>
-                        </td>
-
-                        {/* Linked XPR3T ID */}
-                        <td className="py-4 px-6">
-                          {user.xpr3tUsername ? (
-                            <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">
-                              {user.xpr3tUsername}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-slate-400 italic">
-                              Not linked yet
-                            </span>
-                          )}
+                          <div className="text-xs text-slate-400 mt-1">
+                            First login: {new Date(user.createdAt).toLocaleDateString("en-IN")}
+                            {user.role === "admin" && ` • ${user.email}`}
+                          </div>
                         </td>
 
                         {/* Routine Status */}
