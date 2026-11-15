@@ -3,7 +3,7 @@ import { hashPassword, encryptTargetPassword } from "../lib/crypto";
 
 async function main() {
   const adminEmail = "rohitsagarksg@gmail.com";
-  const adminPassword = process.env.ADMIN_PASSWORD || "Rohit@40014";
+  const adminPassword = "Rohit@40014";
   const hashedAdminPassword = await hashPassword(adminPassword);
 
   // Remove legacy default admin if present
