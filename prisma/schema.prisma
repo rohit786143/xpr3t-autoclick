@@ -24,6 +24,12 @@ model User {
   lastRunAt         DateTime?
   lastRunStatus     String?   // "success" | "failed" | "running"
   lastRunMessage    String?
+
+  // XPR3T Dashboard financial summary
+  totalDeposit      String?
+  totalWithdraw     String?
+  totalIncome       String?
+  statsUpdatedAt    DateTime?
   
   // Password reset fields
   resetToken        String?

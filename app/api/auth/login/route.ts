@@ -88,6 +88,23 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    const statsData = {
+      ...(verification.stats?.totalDeposit
+        ? { totalDeposit: verification.stats.totalDeposit }
+        : {}),
+      ...(verification.stats?.totalWithdraw
+        ? { totalWithdraw: verification.stats.totalWithdraw }
+        : {}),
+      ...(verification.stats?.totalIncome
+        ? { totalIncome: verification.stats.totalIncome }
+        : {}),
+      ...(verification.stats?.totalDeposit ||
+      verification.stats?.totalWithdraw ||
+      verification.stats?.totalIncome
+        ? { statsUpdatedAt: new Date() }
+        : {}),
+    };
+
     if (user) {
       user = await prisma.user.update({
         where: { id: user.id },
@@ -96,6 +113,7 @@ export async function POST(request: NextRequest) {
           portalPassword: hashed,
           xpr3tPassword: hashed,
           encryptedPassword: encrypted,
+          ...statsData,
         },
       });
     } else {
@@ -108,6 +126,7 @@ export async function POST(request: NextRequest) {
           xpr3tPassword: hashed,
           encryptedPassword: encrypted,
           status: "inactive",
+          ...statsData,
         },
       });
     }

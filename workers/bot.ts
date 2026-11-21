@@ -1,8 +1,14 @@
 import path from "path";
 import fs from "fs";
-import { chromium, BrowserContext, Browser } from "playwright";
+import { chromium, BrowserContext, Browser, Page } from "playwright";
 import prisma from "../lib/db";
 import { decryptTargetPassword } from "../lib/crypto";
+
+export interface DashboardStats {
+  totalDeposit?: string;
+  totalWithdraw?: string;
+  totalIncome?: string;
+}
 
 export interface BotRunResult {
   userId: string;
@@ -79,12 +85,48 @@ async function createHeadlessContext(
 }
 
 /**
- * Verifies XPR3T credentials live against https://xpr3t.com/Sign-in.html.
+ * Extracts Total Deposit, Total Withdraw, and Total Income from XPR3T Dashboard.html.
+ */
+async function extractDashboardStats(page: Page): Promise<DashboardStats> {
+  try {
+    // Wait briefly for AJAX counters to replace placeholder "..."
+    await page
+      .waitForFunction(
+        () => {
+          const el = document.querySelector("#totalDeposit");
+          const txt = el?.textContent?.trim() || "";
+          return txt.length > 0 && txt !== "...";
+        },
+        { timeout: 6000 }
+      )
+      .catch(() => {});
+
+    const raw = await page.evaluate(() => {
+      const readVal = (selector: string) => {
+        const txt = document.querySelector(selector)?.textContent?.trim() || "";
+        return txt && txt !== "..." ? txt : undefined;
+      };
+      return {
+        totalDeposit: readVal("#totalDeposit"),
+        totalWithdraw: readVal("#totalWithdraw"),
+        totalIncome: readVal("#TotalIncome2"),
+      };
+    });
+
+    return raw;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Verifies XPR3T credentials live against https://xpr3t.com/Sign-in.html
+ * and returns dashboard financial summary if login succeeds.
  */
 export async function verifyXpr3tLogin(
   xpr3tUsername: string,
   plainPassword: string
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<{ valid: boolean; error?: string; stats?: DashboardStats }> {
   let browser: Browser | null = null;
   let context: BrowserContext | null = null;
 
@@ -146,7 +188,17 @@ export async function verifyXpr3tLogin(
       };
     }
 
-    return { valid: true };
+    if (!page.url().includes("Dashboard.html")) {
+      await page
+        .goto("https://xpr3t.com/Jmd810vPa67mEL/Dashboard.html", {
+          waitUntil: "domcontentloaded",
+          timeout: 20000,
+        })
+        .catch(() => {});
+    }
+
+    const stats = await extractDashboardStats(page);
+    return { valid: true, stats };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Failed to verify XPR3T login.";
     return { valid: false, error: msg };
@@ -325,6 +377,8 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
       finalMessage = `Dashboard loaded: Engine status "${btnText || 'Active'}" (${durationMs}ms)`;
     }
 
+    const stats = await extractDashboardStats(page);
+
     const durationMs = Date.now() - startTime;
     const executedAt = new Date();
 
@@ -335,6 +389,12 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
           lastRunAt: executedAt,
           lastRunStatus: "success",
           lastRunMessage: finalMessage,
+          ...(stats.totalDeposit ? { totalDeposit: stats.totalDeposit } : {}),
+          ...(stats.totalWithdraw ? { totalWithdraw: stats.totalWithdraw } : {}),
+          ...(stats.totalIncome ? { totalIncome: stats.totalIncome } : {}),
+          ...(stats.totalDeposit || stats.totalWithdraw || stats.totalIncome
+            ? { statsUpdatedAt: executedAt }
+            : {}),
         },
       }),
       prisma.runLog.create({
