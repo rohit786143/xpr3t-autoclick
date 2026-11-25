@@ -12,6 +12,16 @@ interface RunLog {
   executedAt: string;
 }
 
+interface PaymentRecord {
+  id: string;
+  planDays: number;
+  expectedAmount: string;
+  senderWallet: string | null;
+  txHash: string | null;
+  paidAt: string | null;
+  createdAt: string;
+}
+
 interface UserData {
   id: string;
   email: string;
@@ -28,6 +38,7 @@ interface UserData {
   subscriptionExpiresAt: string | null;
   createdAt: string;
   logs: RunLog[];
+  payments?: PaymentRecord[];
 }
 
 interface ActivePaymentOrder {
@@ -518,9 +529,9 @@ export default function UserDashboard() {
                 setPaymentError(null);
                 setShowPaymentModal(true);
               }}
-              className="px-4 py-2.5 rounded-xl font-semibold text-sm text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition"
+              className="px-4 py-2.5 rounded-xl font-semibold text-sm text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition"
             >
-              Extend Plan
+              Buy AutoClick
             </button>
           </div>
         </div>
@@ -590,8 +601,8 @@ export default function UserDashboard() {
                 Click any date to see whether the bot clicked Start Engine or the exact reason it failed.
               </p>
             </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-3 text-xs font-medium">
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex flex-wrap items-center gap-3 text-xs font-medium">
                 <span className="inline-flex items-center gap-1.5 text-emerald-700">
                   <span className="w-3 h-3 rounded-sm bg-emerald-500 inline-block"></span>
                   Clicked / Active
@@ -599,6 +610,10 @@ export default function UserDashboard() {
                 <span className="inline-flex items-center gap-1.5 text-red-700">
                   <span className="w-3 h-3 rounded-sm bg-red-500 inline-block"></span>
                   Failed / Not Clicked
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-blue-700">
+                  <span className="w-3 h-3 rounded-sm bg-blue-500 inline-block"></span>
+                  Paid AutoClick
                 </span>
               </div>
               <button
@@ -642,43 +657,63 @@ export default function UserDashboard() {
               </div>
 
               <div className="grid grid-cols-7 gap-1.5">
-                {calendarCells.map((cell, idx) => {
-                  if (!cell.day || !cell.dateKey) {
-                    return <div key={`empty-${idx}`} className="h-12 sm:h-14" />;
-                  }
-                  const dayLogs = logsByDate[cell.dateKey] || [];
-                  const hasSuccess = dayLogs.some((l) => l.status === "success");
-                  const hasFailed = !hasSuccess && dayLogs.some((l) => l.status === "failed");
-                  const isSelected = selectedDateKey === cell.dateKey;
+                {(() => {
+                  const todayIstKey = getIstDateKey(new Date());
+                  const expiryIstKey = user?.subscriptionExpiresAt
+                    ? getIstDateKey(user.subscriptionExpiresAt)
+                    : null;
 
-                  let cellClasses =
-                    "bg-white border-slate-200 text-slate-700 hover:border-slate-400";
-                  if (hasSuccess) {
-                    cellClasses =
-                      "bg-emerald-500 border-emerald-600 text-white hover:bg-emerald-600";
-                  } else if (hasFailed) {
-                    cellClasses =
-                      "bg-red-500 border-red-600 text-white hover:bg-red-600";
-                  }
+                  return calendarCells.map((cell, idx) => {
+                    if (!cell.day || !cell.dateKey) {
+                      return <div key={`empty-${idx}`} className="h-14 sm:h-16" />;
+                    }
+                    const dayLogs = logsByDate[cell.dateKey] || [];
+                    const hasSuccess = dayLogs.some((l) => l.status === "success");
+                    const hasFailed = !hasSuccess && dayLogs.some((l) => l.status === "failed");
+                    const isPaidFuture =
+                      !hasSuccess &&
+                      !hasFailed &&
+                      !!expiryIstKey &&
+                      cell.dateKey > todayIstKey &&
+                      cell.dateKey <= expiryIstKey;
+                    const isSelected = selectedDateKey === cell.dateKey;
 
-                  return (
-                    <button
-                      key={cell.dateKey}
-                      type="button"
-                      onClick={() => setSelectedDateKey(cell.dateKey!)}
-                      className={`h-12 sm:h-14 rounded-xl border font-semibold text-xs sm:text-sm flex flex-col items-center justify-center transition relative ${cellClasses} ${
-                        isSelected ? "ring-2 ring-offset-2 ring-blue-600" : ""
-                      }`}
-                    >
-                      <span>{cell.day}</span>
-                      {dayLogs.length > 0 && (
-                        <span className="text-[9px] font-medium opacity-90">
-                          {hasSuccess ? "Clicked" : "Failed"}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
+                    let cellClasses =
+                      "bg-white border-slate-200 text-slate-700 hover:border-slate-400";
+                    if (hasSuccess) {
+                      cellClasses =
+                        "bg-emerald-500 border-emerald-600 text-white hover:bg-emerald-600";
+                    } else if (hasFailed) {
+                      cellClasses =
+                        "bg-red-500 border-red-600 text-white hover:bg-red-600";
+                    } else if (isPaidFuture) {
+                      cellClasses =
+                        "bg-blue-50 border-blue-300 text-blue-800 hover:bg-blue-100";
+                    }
+
+                    return (
+                      <button
+                        key={cell.dateKey}
+                        type="button"
+                        onClick={() => setSelectedDateKey(cell.dateKey!)}
+                        className={`h-14 sm:h-16 rounded-xl border font-semibold text-xs sm:text-sm flex flex-col items-center justify-center transition relative px-1 ${cellClasses} ${
+                          isSelected ? "ring-2 ring-offset-2 ring-blue-600" : ""
+                        }`}
+                      >
+                        <span>{cell.day}</span>
+                        {dayLogs.length > 0 ? (
+                          <span className="text-[9px] font-medium opacity-90">
+                            {hasSuccess ? "Clicked" : "Failed"}
+                          </span>
+                        ) : isPaidFuture ? (
+                          <span className="text-[8px] sm:text-[9px] font-semibold leading-tight text-blue-700">
+                            Paid AutoClick
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  });
+                })()}
               </div>
             </div>
 
@@ -700,7 +735,31 @@ export default function UserDashboard() {
 
               {(() => {
                 const selectedLogs = logsByDate[selectedDateKey] || [];
+                const todayIstKey = getIstDateKey(new Date());
+                const expiryIstKey = user?.subscriptionExpiresAt
+                  ? getIstDateKey(user.subscriptionExpiresAt)
+                  : null;
+                const isPaidFuture =
+                  !!expiryIstKey &&
+                  selectedDateKey > todayIstKey &&
+                  selectedDateKey <= expiryIstKey;
+
                 if (selectedLogs.length === 0) {
+                  if (isPaidFuture) {
+                    return (
+                      <div className="flex-1 flex flex-col items-center justify-center text-center py-8 px-4 bg-blue-50/60 border border-blue-200 rounded-xl">
+                        <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 mb-2">
+                          Paid AutoClick Scheduled
+                        </span>
+                        <p className="text-sm font-semibold text-slate-800">
+                          Your active plan covers this date!
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Bot will automatically run at 12:00 AM IST on this date.
+                        </p>
+                      </div>
+                    );
+                  }
                   return (
                     <div className="flex-1 flex flex-col items-center justify-center text-center py-8 text-slate-400">
                       <p className="text-sm font-medium text-slate-500">No activity on this date</p>
@@ -758,6 +817,79 @@ export default function UserDashboard() {
                 );
               })()}
             </div>
+          </div>
+        </div>
+
+        {/* Payment History & Transaction Hash Details */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">
+                Payment Details &amp; Transaction History
+              </h3>
+              <p className="text-xs text-slate-500">
+                Verified USDT (BEP20) subscription payments with BscScan transaction hash
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-slate-600">
+              <thead className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                <tr>
+                  <th className="py-3 px-4">Date (IST)</th>
+                  <th className="py-3 px-4">Plan</th>
+                  <th className="py-3 px-4">Amount Paid</th>
+                  <th className="py-3 px-4">Sender Wallet</th>
+                  <th className="py-3 px-4">Transaction Hash (BscScan)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs">
+                {user?.payments && user.payments.length > 0 ? (
+                  user.payments.map((p) => (
+                    <tr key={p.id} className="hover:bg-slate-50/60">
+                      <td className="py-3 px-4 whitespace-nowrap text-slate-600">
+                        {p.paidAt
+                          ? new Date(p.paidAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
+                          : new Date(p.createdAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}
+                      </td>
+                      <td className="py-3 px-4 font-semibold text-slate-900">
+                        {p.planDays} Days
+                      </td>
+                      <td className="py-3 px-4 font-mono font-bold text-emerald-700">
+                        {p.expectedAmount} USDT
+                      </td>
+                      <td className="py-3 px-4 font-mono text-slate-500">
+                        {p.senderWallet
+                          ? `${p.senderWallet.slice(0, 6)}...${p.senderWallet.slice(-4)}`
+                          : "-"}
+                      </td>
+                      <td className="py-3 px-4 font-mono">
+                        {p.txHash ? (
+                          <a
+                            href={`https://bscscan.com/tx/${p.txHash}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-blue-600 hover:underline inline-flex items-center gap-1"
+                          >
+                            {p.txHash.slice(0, 10)}...{p.txHash.slice(-8)}
+                            <span aria-hidden="true">&#8599;</span>
+                          </a>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-slate-400">
+                      No verified payments yet. Click Start Auto-Click or Buy AutoClick to subscribe.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </main>

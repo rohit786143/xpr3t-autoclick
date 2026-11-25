@@ -21,6 +21,11 @@ export async function GET() {
           orderBy: { executedAt: "desc" },
           take: 180,
         },
+        payments: {
+          where: { status: "paid" },
+          orderBy: { paidAt: "desc" },
+          take: 50,
+        },
       },
     });
 
@@ -46,6 +51,7 @@ export async function GET() {
         subscriptionExpiresAt: user.subscriptionExpiresAt,
         createdAt: user.createdAt,
         logs: user.logs,
+        payments: user.payments,
       },
     });
   } catch (error) {
