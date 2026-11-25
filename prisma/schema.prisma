@@ -35,9 +35,27 @@ model User {
   resetToken        String?
   resetTokenExpiry  DateTime?
 
+  // Subscription / Auto-Click validity
+  subscriptionExpiresAt DateTime?
+
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   logs              RunLog[]
+  payments          PaymentOrder[]
+}
+
+model PaymentOrder {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planDays       Int
+  baseAmount     Float
+  expectedAmount String    // Exact unique amount e.g. "1.014"
+  status         String    @default("pending") // "pending" | "paid" | "expired"
+  txHash         String?   @unique
+  expiresAt      DateTime
+  paidAt         DateTime?
+  createdAt      DateTime  @default(now())
 }
 
 model RunLog {

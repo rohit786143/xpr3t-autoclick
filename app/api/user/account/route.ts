@@ -43,6 +43,7 @@ export async function GET() {
         totalWithdraw: user.totalWithdraw,
         totalIncome: user.totalIncome,
         statsUpdatedAt: user.statsUpdatedAt,
+        subscriptionExpiresAt: user.subscriptionExpiresAt,
         createdAt: user.createdAt,
         logs: user.logs,
       },
@@ -137,6 +138,26 @@ export async function PATCH(request: NextRequest) {
 
     const body = await request.json();
     const nextStatus = body.status === "active" ? "active" : "inactive";
+
+    if (nextStatus === "active") {
+      const currentUser = await prisma.user.findUnique({
+        where: { id: session.sub },
+        select: { role: true, subscriptionExpiresAt: true },
+      });
+
+      const hasValidSub =
+        currentUser?.role === "admin" ||
+        (currentUser?.subscriptionExpiresAt &&
+          new Date(currentUser.subscriptionExpiresAt) > new Date());
+
+      if (!hasValidSub) {
+        return NextResponse.json({
+          success: false,
+          requiresPayment: true,
+          message: "Please select a subscription plan and complete USDT (BEP20) payment to start Auto-Click.",
+        });
+      }
+    }
 
     await prisma.user.update({
       where: { id: session.sub },

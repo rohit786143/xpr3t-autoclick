@@ -471,8 +471,22 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
 }
 
 export async function runAllActiveUsers(): Promise<BotRunResult[]> {
+  const now = new Date();
+  // Expire any active non-admin subscriptions that have passed their validity date
+  await prisma.user.updateMany({
+    where: {
+      role: { not: "admin" },
+      status: "active",
+      subscriptionExpiresAt: { lt: now },
+    },
+    data: {
+      status: "inactive",
+      lastRunMessage: "Subscription expired. Please renew your plan to continue Auto-Click.",
+    },
+  });
+
   const activeUsers = await prisma.user.findMany({
-    where: { 
+    where: {
       status: "active",
       xpr3tUsername: { not: null },
     },

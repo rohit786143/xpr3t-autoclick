@@ -25,9 +25,28 @@ interface UserData {
   totalWithdraw: string | null;
   totalIncome: string | null;
   statsUpdatedAt: string | null;
+  subscriptionExpiresAt: string | null;
   createdAt: string;
   logs: RunLog[];
 }
+
+interface ActivePaymentOrder {
+  id: string;
+  planDays: number;
+  planLabel: string;
+  baseAmount: number;
+  expectedAmount: string;
+  expiresAt: string;
+  qrDataUrl: string;
+}
+
+const PLAN_OPTIONS = [
+  { days: 30, usd: 1, label: "30 Days", tag: "Starter" },
+  { days: 65, usd: 2, label: "65 Days", tag: "+5 Bonus Days" },
+  { days: 100, usd: 3, label: "100 Days", tag: "+10 Bonus Days" },
+  { days: 200, usd: 6, label: "200 Days", tag: "Popular" },
+  { days: 365, usd: 10, label: "365 Days", tag: "Best Value" },
+];
 
 function getIstDateKey(dateInput: Date | string): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -57,6 +76,14 @@ export default function UserDashboard() {
   const [togglingStatus, setTogglingStatus] = useState(false);
   const [isGhost, setIsGhost] = useState(false);
   const [actionMessage, setActionMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Payment & Subscription Modal State
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [creatingOrder, setCreatingOrder] = useState(false);
+  const [paymentOrder, setPaymentOrder] = useState<ActivePaymentOrder | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [checkingPayment, setCheckingPayment] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(0);
 
   // Calendar State (IST)
   const initialYM = useMemo(() => getIstYearMonth(), []);
@@ -131,6 +158,81 @@ export default function UserDashboard() {
     fetchUserData();
   }, [fetchUserData]);
 
+  const handleSelectPlan = useCallback(async (planDays: number) => {
+    setCreatingOrder(true);
+    setPaymentError(null);
+    try {
+      const res = await fetch("/api/payments/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planDays }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to generate payment QR.");
+      }
+      setPaymentOrder(data.order);
+    } catch (err: unknown) {
+      setPaymentError(err instanceof Error ? err.message : "Could not generate QR.");
+    } finally {
+      setCreatingOrder(false);
+    }
+  }, []);
+
+  const checkPaymentStatus = useCallback(
+    async (orderId: string, manual = false) => {
+      if (manual) setCheckingPayment(true);
+      try {
+        const res = await fetch(`/api/payments/status?orderId=${encodeURIComponent(orderId)}`);
+        const data = await res.json();
+        if (data.status === "paid") {
+          setShowPaymentModal(false);
+          setPaymentOrder(null);
+          setActionMessage({
+            type: "success",
+            text: "USDT (BEP20) payment verified via BscScan! Auto-Click is now active.",
+          });
+          await fetchUserData();
+        } else if (data.status === "expired" && paymentOrder) {
+          // Automatically rotate to a fresh unique amount & QR every 10 minutes
+          await handleSelectPlan(paymentOrder.planDays);
+        }
+      } catch {
+        // Ignore transient network poll error
+      } finally {
+        if (manual) setCheckingPayment(false);
+      }
+    },
+    [fetchUserData, handleSelectPlan, paymentOrder]
+  );
+
+  // Live 10-minute countdown timer & 8-second blockchain auto-polling
+  useEffect(() => {
+    if (!showPaymentModal || !paymentOrder) return;
+
+    const updateTimer = () => {
+      const diffSec = Math.max(
+        0,
+        Math.floor((new Date(paymentOrder.expiresAt).getTime() - Date.now()) / 1000)
+      );
+      setSecondsLeft(diffSec);
+      if (diffSec === 0) {
+        handleSelectPlan(paymentOrder.planDays);
+      }
+    };
+
+    updateTimer();
+    const timerInterval = setInterval(updateTimer, 1000);
+    const pollInterval = setInterval(() => {
+      checkPaymentStatus(paymentOrder.id, false);
+    }, 8000);
+
+    return () => {
+      clearInterval(timerInterval);
+      clearInterval(pollInterval);
+    };
+  }, [showPaymentModal, paymentOrder, handleSelectPlan, checkPaymentStatus]);
+
   const handleToggleAutoClick = async (nextStatus: "active" | "inactive") => {
     setTogglingStatus(true);
     setActionMessage(null);
@@ -143,6 +245,12 @@ export default function UserDashboard() {
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || "Failed to update Auto-Click status.");
+      }
+      if (data.requiresPayment) {
+        setPaymentOrder(null);
+        setPaymentError(null);
+        setShowPaymentModal(true);
+        return;
       }
       if (nextStatus === "active") {
         setActionMessage({
@@ -320,6 +428,25 @@ export default function UserDashboard() {
                     Auto-Click Stopped
                   </span>
                 )}
+                {user?.role === "admin" ? (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 border border-purple-200">
+                    Lifetime Validity (Admin)
+                  </span>
+                ) : user?.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) > new Date() ? (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                    Valid till:{" "}
+                    {new Date(user.subscriptionExpiresAt).toLocaleDateString("en-IN", {
+                      timeZone: "Asia/Kolkata",
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                    Plan Required
+                  </span>
+                )}
               </div>
               <p className="text-sm text-slate-500 mt-1">
                 {isAutoClickActive
@@ -360,6 +487,19 @@ export default function UserDashboard() {
             >
               {runningTest ? "Testing..." : "Test Run Now"}
             </button>
+
+            {user?.role !== "admin" && (
+              <button
+                onClick={() => {
+                  setPaymentOrder(null);
+                  setPaymentError(null);
+                  setShowPaymentModal(true);
+                }}
+                className="px-4 py-2.5 rounded-xl font-semibold text-sm text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition"
+              >
+                Extend Plan
+              </button>
+            )}
           </div>
         </div>
 
@@ -599,6 +739,129 @@ export default function UserDashboard() {
           </div>
         </div>
       </main>
+
+      {/* USDT (BEP20) Subscription & Auto-Verify QR Modal */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 space-y-5 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">
+                  {paymentOrder ? "Scan QR to Pay USDT (BEP20)" : "Choose Auto-Click Plan"}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {paymentOrder
+                    ? "Auto-verified via BscScan. Validity activates immediately after payment."
+                    : "Select a validity plan to generate your unique BEP20 payment QR."}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowPaymentModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold px-2"
+              >
+                &times;
+              </button>
+            </div>
+
+            {paymentError && (
+              <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium">
+                {paymentError}
+              </div>
+            )}
+
+            {!paymentOrder ? (
+              <div className="space-y-2.5">
+                {PLAN_OPTIONS.map((plan) => (
+                  <button
+                    key={plan.days}
+                    type="button"
+                    disabled={creatingOrder}
+                    onClick={() => handleSelectPlan(plan.days)}
+                    className="w-full p-4 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50/40 transition flex items-center justify-between text-left disabled:opacity-60"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900 text-sm sm:text-base">
+                          {plan.label}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800">
+                          {plan.tag}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Daily 12:00 AM IST automated Start Engine click
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-lg font-extrabold text-blue-600 font-mono">
+                        {plan.usd} USDT
+                      </span>
+                      <div className="text-[10px] text-slate-400 uppercase font-semibold">
+                        BEP20 (BSC)
+                      </div>
+                    </div>
+                  </button>
+                ))}
+
+                {creatingOrder && (
+                  <p className="text-center text-xs font-medium text-blue-600 pt-2">
+                    Generating unique payment QR code...
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-4 text-center">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 inline-block mx-auto">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={paymentOrder.qrDataUrl}
+                    alt="USDT BEP20 Payment QR"
+                    className="w-56 h-56 mx-auto rounded-xl bg-white p-2 border border-slate-200"
+                  />
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-blue-700 block">
+                    Exact Amount to Pay ({paymentOrder.planLabel})
+                  </span>
+                  <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-mono mt-1">
+                    {paymentOrder.expectedAmount} USDT
+                  </div>
+                  <p className="text-[11px] text-blue-700 mt-1">
+                    Amount is auto-locked for your account. Do not edit the decimal amount while paying.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded-xl px-4 py-2.5">
+                  <span>QR &amp; Amount refreshes in:</span>
+                  <span className="font-mono font-bold text-sm">
+                    {String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:
+                    {String(secondsLeft % 60).padStart(2, "0")}
+                  </span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => checkPaymentStatus(paymentOrder.id, true)}
+                    disabled={checkingPayment}
+                    className="flex-1 py-2.5 px-4 rounded-xl font-semibold text-sm text-white bg-emerald-600 hover:bg-emerald-700 transition disabled:opacity-60"
+                  >
+                    {checkingPayment ? "Checking BscScan..." : "I Have Paid — Verify Now"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentOrder(null)}
+                    className="py-2.5 px-4 rounded-xl font-semibold text-sm text-slate-700 bg-slate-100 hover:bg-slate-200 transition"
+                  >
+                    Change Plan
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
