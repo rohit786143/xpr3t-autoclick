@@ -45,6 +45,7 @@ export async function generateBep20PaymentQr(): Promise<string> {
 
 export interface IncomingBep20Transfer {
   txHash: string;
+  from: string;
   valueWei: bigint;
   timestampMs: number;
 }
@@ -70,8 +71,9 @@ export async function fetchRecentIncomingUsdtTransfers(): Promise<IncomingBep20T
         const targetLower = RECEIVER_WALLET.toLowerCase();
         return data.result
           .filter((tx: { to?: string }) => tx.to?.toLowerCase() === targetLower)
-          .map((tx: { hash: string; value: string; timeStamp: string }) => ({
+          .map((tx: { hash: string; from: string; value: string; timeStamp: string }) => ({
             txHash: tx.hash.toLowerCase(),
+            from: (tx.from || "").toLowerCase(),
             valueWei: BigInt(tx.value),
             timestampMs: Number(tx.timeStamp) * 1000,
           }));
@@ -118,6 +120,7 @@ async function fetchViaBscRpc(): Promise<IncomingBep20Transfer[]> {
 
       const logs: Array<{
         transactionHash: string;
+        topics: string[];
         data: string;
         blockNumber: string;
       }> = await rpcCall(rpcUrl, "eth_getLogs", [
@@ -135,8 +138,14 @@ async function fetchViaBscRpc(): Promise<IncomingBep20Transfer[]> {
       return logs.map((log) => {
         const blockNum = parseInt(log.blockNumber, 16);
         const approxAgeMs = Math.max(0, latestBlock - blockNum) * 3000;
+        const fromTopic = log.topics?.[1] || "";
+        const fromAddr =
+          fromTopic.length === 66
+            ? ("0x" + fromTopic.slice(26)).toLowerCase()
+            : "";
         return {
           txHash: log.transactionHash.toLowerCase(),
+          from: fromAddr,
           valueWei: BigInt(log.data),
           timestampMs: nowMs - approxAgeMs,
         };

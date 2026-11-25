@@ -36,6 +36,7 @@ interface ActivePaymentOrder {
   planLabel: string;
   baseAmount: number;
   expectedAmount: string;
+  senderWallet?: string;
   expiresAt: string;
   qrDataUrl: string;
 }
@@ -79,6 +80,8 @@ export default function UserDashboard() {
 
   // Payment & Subscription Modal State
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedPlanDays, setSelectedPlanDays] = useState<number | null>(null);
+  const [senderWallet, setSenderWallet] = useState("");
   const [creatingOrder, setCreatingOrder] = useState(false);
   const [paymentOrder, setPaymentOrder] = useState<ActivePaymentOrder | null>(null);
   const [paymentError, setPaymentError] = useState<string | null>(null);
@@ -158,26 +161,37 @@ export default function UserDashboard() {
     fetchUserData();
   }, [fetchUserData]);
 
-  const handleSelectPlan = useCallback(async (planDays: number) => {
-    setCreatingOrder(true);
-    setPaymentError(null);
-    try {
-      const res = await fetch("/api/payments/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planDays }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to generate payment QR.");
+  const handleCreateOrder = useCallback(
+    async (planDays: number, walletAddress: string) => {
+      const cleaned = walletAddress.trim();
+      if (!/^0x[a-fA-F0-9]{40}$/.test(cleaned)) {
+        setPaymentError(
+          "Please enter a valid BEP20 wallet address (starts with 0x, 42 characters)."
+        );
+        return;
       }
-      setPaymentOrder(data.order);
-    } catch (err: unknown) {
-      setPaymentError(err instanceof Error ? err.message : "Could not generate QR.");
-    } finally {
-      setCreatingOrder(false);
-    }
-  }, []);
+
+      setCreatingOrder(true);
+      setPaymentError(null);
+      try {
+        const res = await fetch("/api/payments/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ planDays, senderWallet: cleaned }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to generate payment QR.");
+        }
+        setPaymentOrder(data.order);
+      } catch (err: unknown) {
+        setPaymentError(err instanceof Error ? err.message : "Could not generate QR.");
+      } finally {
+        setCreatingOrder(false);
+      }
+    },
+    []
+  );
 
   const checkPaymentStatus = useCallback(
     async (orderId: string, manual = false) => {
@@ -243,6 +257,7 @@ export default function UserDashboard() {
         throw new Error(data.error || "Failed to update Auto-Click status.");
       }
       if (data.requiresPayment) {
+        setSelectedPlanDays(null);
         setPaymentOrder(null);
         setPaymentError(null);
         setShowPaymentModal(true);
@@ -487,6 +502,7 @@ export default function UserDashboard() {
             {user?.role !== "admin" && (
               <button
                 onClick={() => {
+                  setSelectedPlanDays(null);
                   setPaymentOrder(null);
                   setPaymentError(null);
                   setShowPaymentModal(true);
@@ -743,12 +759,18 @@ export default function UserDashboard() {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">
-                  {paymentOrder ? "Scan QR to Pay USDT (BEP20)" : "Choose Auto-Click Plan"}
+                  {paymentOrder
+                    ? "Scan QR to Pay USDT (BEP20)"
+                    : selectedPlanDays
+                    ? "Enter Your Sender Wallet Address"
+                    : "Choose Auto-Click Plan"}
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   {paymentOrder
                     ? "Auto-verified via BscScan. Validity activates immediately after payment."
-                    : "Select a validity plan to generate your unique BEP20 payment QR."}
+                    : selectedPlanDays
+                    ? "Required to automatically verify your payment on BscScan."
+                    : "Select a validity plan to continue."}
                 </p>
               </div>
               <button
@@ -765,15 +787,17 @@ export default function UserDashboard() {
               </div>
             )}
 
-            {!paymentOrder ? (
+            {!paymentOrder && !selectedPlanDays ? (
               <div className="space-y-2.5">
                 {PLAN_OPTIONS.map((plan) => (
                   <button
                     key={plan.days}
                     type="button"
-                    disabled={creatingOrder}
-                    onClick={() => handleSelectPlan(plan.days)}
-                    className="w-full p-4 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50/40 transition flex items-center justify-between text-left disabled:opacity-60"
+                    onClick={() => {
+                      setPaymentError(null);
+                      setSelectedPlanDays(plan.days);
+                    }}
+                    className="w-full p-4 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50/40 transition flex items-center justify-between text-left"
                   >
                     <div>
                       <div className="flex items-center gap-2">
@@ -798,14 +822,67 @@ export default function UserDashboard() {
                     </div>
                   </button>
                 ))}
-
-                {creatingOrder && (
-                  <p className="text-center text-xs font-medium text-blue-600 pt-2">
-                    Generating unique payment QR code...
-                  </p>
-                )}
               </div>
-            ) : (
+            ) : !paymentOrder && selectedPlanDays ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleCreateOrder(selectedPlanDays, senderWallet);
+                }}
+                autoComplete="off"
+                className="space-y-4"
+              >
+                <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 space-y-1.5">
+                  <p className="text-xs sm:text-sm font-semibold text-slate-900">
+                    Enter the BEP20 wallet address from which you will send{" "}
+                    <span className="text-blue-700 font-mono">
+                      {PLAN_OPTIONS.find((p) => p.days === selectedPlanDays)?.usd} USDT
+                    </span>
+                    :
+                  </p>
+                  <p className="text-xs sm:text-sm font-medium text-blue-900">
+                    जिस वॉलेट एड्रेस से आप पेमेंट करेंगे, वह BEP20 वॉलेट एड्रेस यहाँ डालें:
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                    Your Sender Wallet Address (BEP20)
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={senderWallet}
+                    onChange={(e) => setSenderWallet(e.target.value)}
+                    placeholder="0x..."
+                    className="w-full px-4 py-2.5 text-sm bg-white border border-slate-300 rounded-xl text-black placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1.5">
+                    Example: SafePal / TrustWallet / MetaMask BEP20 address (starts with 0x)
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
+                  <button
+                    type="submit"
+                    disabled={creatingOrder}
+                    className="flex-1 py-2.5 px-4 rounded-xl font-semibold text-sm text-white bg-blue-600 hover:bg-blue-700 transition disabled:opacity-60"
+                  >
+                    {creatingOrder ? "Generating QR..." : "Submit & Generate QR"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedPlanDays(null);
+                      setPaymentError(null);
+                    }}
+                    className="py-2.5 px-4 rounded-xl font-semibold text-sm text-slate-700 bg-slate-100 hover:bg-slate-200 transition"
+                  >
+                    Back to Plans
+                  </button>
+                </div>
+              </form>
+            ) : paymentOrder ? (
               <div className="space-y-4 text-center">
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 inline-block mx-auto">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -835,7 +912,7 @@ export default function UserDashboard() {
                     </button>
                   </div>
                   <p className="text-[11px] text-blue-700 mt-1.5">
-                    Scan QR in your wallet (USDT BEP20) and enter this exact amount.
+                    Scan QR from your registered wallet ({paymentOrder.senderWallet?.slice(0, 6)}...{paymentOrder.senderWallet?.slice(-4)}) &amp; pay exact {paymentOrder.expectedAmount} USDT (BEP20).
                   </p>
                 </div>
 
@@ -869,7 +946,7 @@ export default function UserDashboard() {
                   {secondsLeft === 0 ? (
                     <button
                       type="button"
-                      onClick={() => handleSelectPlan(paymentOrder.planDays)}
+                      onClick={() => handleCreateOrder(paymentOrder.planDays, senderWallet)}
                       disabled={creatingOrder}
                       className="py-2.5 px-4 rounded-xl font-semibold text-sm text-white bg-blue-600 hover:bg-blue-700 transition disabled:opacity-60"
                     >
@@ -878,7 +955,10 @@ export default function UserDashboard() {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => setPaymentOrder(null)}
+                      onClick={() => {
+                        setPaymentOrder(null);
+                        setSelectedPlanDays(null);
+                      }}
                       className="py-2.5 px-4 rounded-xl font-semibold text-sm text-slate-700 bg-slate-100 hover:bg-slate-200 transition"
                     >
                       Change Plan
@@ -886,7 +966,7 @@ export default function UserDashboard() {
                   )}
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       )}

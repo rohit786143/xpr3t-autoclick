@@ -46,66 +46,61 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ status: "expired" });
     }
 
-    // Check blockchain (BscScan API / BSC RPC) for matching unique BEP20 USDT transfer
+    // Check blockchain (BscScan API / BSC RPC) for matching senderWallet + exact whole USDT amount
     const expectedWei = usdtToWei(order.expectedAmount);
-    const toleranceWei = BigInt("10000000000000"); // 0.00001 USDT
     const minTimestampMs = order.createdAt.getTime() - 120_000;
+    const expectedFrom = (order.senderWallet || "").toLowerCase();
 
     const transfers = await fetchRecentIncomingUsdtTransfers();
 
     for (const tx of transfers) {
       if (tx.timestampMs < minTimestampMs) continue;
+      if (expectedFrom && tx.from !== expectedFrom) continue;
+      if (tx.valueWei < expectedWei) continue;
 
-      const diff =
-        tx.valueWei >= expectedWei
-          ? tx.valueWei - expectedWei
-          : expectedWei - tx.valueWei;
+      // Ensure txHash has not already been claimed by another order
+      const alreadyClaimed = await prisma.paymentOrder.findUnique({
+        where: { txHash: tx.txHash },
+      });
+      if (alreadyClaimed) continue;
 
-      if (diff <= toleranceWei) {
-        // Ensure txHash has not already been claimed by another order
-        const alreadyClaimed = await prisma.paymentOrder.findUnique({
-          where: { txHash: tx.txHash },
-        });
-        if (alreadyClaimed) continue;
+      const baseExpiry =
+        order.user.subscriptionExpiresAt && order.user.subscriptionExpiresAt > now
+          ? order.user.subscriptionExpiresAt
+          : now;
+      const newExpiry = new Date(
+        baseExpiry.getTime() + order.planDays * 24 * 60 * 60 * 1000
+      );
 
-        const baseExpiry =
-          order.user.subscriptionExpiresAt && order.user.subscriptionExpiresAt > now
-            ? order.user.subscriptionExpiresAt
-            : now;
-        const newExpiry = new Date(
-          baseExpiry.getTime() + order.planDays * 24 * 60 * 60 * 1000
-        );
+      await prisma.$transaction([
+        prisma.paymentOrder.update({
+          where: { id: order.id },
+          data: {
+            status: "paid",
+            txHash: tx.txHash,
+            paidAt: now,
+          },
+        }),
+        prisma.user.update({
+          where: { id: order.userId },
+          data: {
+            subscriptionExpiresAt: newExpiry,
+            status: "active",
+            lastRunMessage: `Payment verified (${order.planDays} days). Starting Auto-Click...`,
+          },
+        }),
+      ]);
 
-        await prisma.$transaction([
-          prisma.paymentOrder.update({
-            where: { id: order.id },
-            data: {
-              status: "paid",
-              txHash: tx.txHash,
-              paidAt: now,
-            },
-          }),
-          prisma.user.update({
-            where: { id: order.userId },
-            data: {
-              subscriptionExpiresAt: newExpiry,
-              status: "active",
-              lastRunMessage: `Payment verified (${order.planDays} days). Starting Auto-Click...`,
-            },
-          }),
-        ]);
+      // Run initial bot check immediately
+      await runBotForUser(order.userId).catch((err) => {
+        console.error("[Payment Activation Bot Error]:", err);
+      });
 
-        // Run initial bot check immediately
-        await runBotForUser(order.userId).catch((err) => {
-          console.error("[Payment Activation Bot Error]:", err);
-        });
-
-        return NextResponse.json({
-          status: "paid",
-          txHash: tx.txHash,
-          subscriptionExpiresAt: newExpiry,
-        });
-      }
+      return NextResponse.json({
+        status: "paid",
+        txHash: tx.txHash,
+        subscriptionExpiresAt: newExpiry,
+      });
     }
 
     return NextResponse.json({

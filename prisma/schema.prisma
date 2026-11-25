@@ -50,7 +50,8 @@ model PaymentOrder {
   user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   planDays       Int
   baseAmount     Float
-  expectedAmount String    // Exact unique amount e.g. "1.014"
+  expectedAmount String    // Exact whole USDT amount e.g. "1", "2", "3", "6", "10"
+  senderWallet   String?   // User's BEP20 sender wallet address (0x...)
   status         String    @default("pending") // "pending" | "paid" | "expired"
   txHash         String?   @unique
   expiresAt      DateTime
