@@ -536,62 +536,6 @@ export default function UserDashboard() {
           </div>
         </div>
 
-        {/* Account Financial Summary (Total Deposit, Total Withdraw, Total Income) */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Total Deposit
-              </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                XPR3T
-              </span>
-            </div>
-            <div className="mt-2 text-3xl font-extrabold text-indigo-600 font-mono">
-              {user?.totalDeposit || "$0.00"}
-            </div>
-            <p className="text-[11px] text-slate-400 mt-1">
-              {user?.statsUpdatedAt
-                ? `Synced: ${new Date(user.statsUpdatedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}`
-                : "Click Test Run Now to sync"}
-            </p>
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Total Withdraw
-              </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                XPR3T
-              </span>
-            </div>
-            <div className="mt-2 text-3xl font-extrabold text-slate-900 font-mono">
-              {user?.totalWithdraw || "$0.00"}
-            </div>
-            <p className="text-[11px] text-slate-400 mt-1">
-              Confirmed &amp; processed withdrawals
-            </p>
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Total Income
-              </span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Earnings
-              </span>
-            </div>
-            <div className="mt-2 text-3xl font-extrabold text-emerald-600 font-mono">
-              {user?.totalIncome || "$0.00"}
-            </div>
-            <p className="text-[11px] text-slate-400 mt-1">
-              Cumulative XPR3T account income
-            </p>
-          </div>
-        </div>
-
         {/* Daily Click Detail Calendar */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
