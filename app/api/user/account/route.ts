@@ -33,6 +33,23 @@ export async function GET() {
       return NextResponse.json({ error: "User not found." }, { status: 404 });
     }
 
+    // Auto-restore validity if user has an active paid order but subscriptionExpiresAt was cleared
+    let effectiveExpiry = user.subscriptionExpiresAt;
+    if (!effectiveExpiry && user.payments && user.payments.length > 0) {
+      const latestPaid = user.payments[0];
+      const baseTime = latestPaid.paidAt || latestPaid.createdAt;
+      const computedExpiry = new Date(
+        new Date(baseTime).getTime() + latestPaid.planDays * 24 * 60 * 60 * 1000
+      );
+      if (computedExpiry > new Date()) {
+        effectiveExpiry = computedExpiry;
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { subscriptionExpiresAt: computedExpiry },
+        });
+      }
+    }
+
     return NextResponse.json({
       isGhost: !!session.isGhost,
       user: {
@@ -48,7 +65,7 @@ export async function GET() {
         totalWithdraw: user.totalWithdraw,
         totalIncome: user.totalIncome,
         statsUpdatedAt: user.statsUpdatedAt,
-        subscriptionExpiresAt: user.subscriptionExpiresAt,
+        subscriptionExpiresAt: effectiveExpiry,
         createdAt: user.createdAt,
         logs: user.logs,
         payments: user.payments,
