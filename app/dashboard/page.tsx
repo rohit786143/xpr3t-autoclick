@@ -248,9 +248,11 @@ export default function UserDashboard() {
 
     updateTimer();
     const timerInterval = setInterval(updateTimer, 1000);
+    // Immediate check + poll every 4 seconds so payment auto-verifies without clicking
+    checkPaymentStatus(paymentOrder.id, false);
     const pollInterval = setInterval(() => {
       checkPaymentStatus(paymentOrder.id, false);
-    }, 8000);
+    }, 4000);
 
     return () => {
       clearInterval(timerInterval);

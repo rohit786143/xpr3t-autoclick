@@ -19,7 +19,7 @@ export const SUBSCRIPTION_PLANS: Record<number, SubscriptionPlan> = {
 };
 
 /**
- * Converts decimal USDT string (e.g. "1.014") to 18-decimal wei BigInt.
+ * Converts decimal USDT string (e.g. "10") to 18-decimal wei BigInt.
  */
 export function usdtToWei(amountStr: string): bigint {
   const [wholePart = "0", fracPart = ""] = amountStr.trim().split(".");
@@ -50,45 +50,10 @@ export interface IncomingBep20Transfer {
   timestampMs: number;
 }
 
-/**
- * Fetches recent incoming BEP20 USDT transfers to RECEIVER_WALLET.
- * Tries BscScan API first (using BSCSCAN_API_KEY if configured), then falls back to public BSC RPC.
- */
-export async function fetchRecentIncomingUsdtTransfers(): Promise<IncomingBep20Transfer[]> {
-  const apiKey = process.env.BSCSCAN_API_KEY || "";
-  const bscScanUrl = `https://api.bscscan.com/api?module=account&action=tokentx&contractaddress=${USDT_BEP20_CONTRACT}&address=${RECEIVER_WALLET}&page=1&offset=50&sort=desc${
-    apiKey ? `&apikey=${apiKey}` : ""
-  }`;
-
-  try {
-    const res = await fetch(bscScanUrl, {
-      signal: AbortSignal.timeout(8000),
-      cache: "no-store",
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.status === "1" && Array.isArray(data.result)) {
-        const targetLower = RECEIVER_WALLET.toLowerCase();
-        return data.result
-          .filter((tx: { to?: string }) => tx.to?.toLowerCase() === targetLower)
-          .map((tx: { hash: string; from: string; value: string; timeStamp: string }) => ({
-            txHash: tx.hash.toLowerCase(),
-            from: (tx.from || "").toLowerCase(),
-            valueWei: BigInt(tx.value),
-            timestampMs: Number(tx.timeStamp) * 1000,
-          }));
-      }
-    }
-  } catch {
-    // Fall back to BSC public JSON-RPC below
-  }
-
-  return fetchViaBscRpc();
-}
-
 const BSC_RPC_URLS = [
+  "https://bsc-rpc.publicnode.com",
+  "https://bsc.drpc.org",
   "https://bsc-dataseed.binance.org/",
-  "https://bsc-dataseed1.defibit.io/",
 ];
 
 const TRANSFER_TOPIC =
@@ -108,6 +73,47 @@ async function rpcCall(url: string, method: string, params: unknown[]) {
   return data.result;
 }
 
+/**
+ * Fetches recent incoming BEP20 USDT transfers to RECEIVER_WALLET.
+ * Uses BSC JSON-RPC (bsc-rpc.publicnode.com primary) with exact on-chain block timestamps,
+ * and optional Etherscan/BscScan V2 API if BSCSCAN_API_KEY is configured.
+ */
+export async function fetchRecentIncomingUsdtTransfers(): Promise<IncomingBep20Transfer[]> {
+  const rpcTransfers = await fetchViaBscRpc();
+  if (rpcTransfers.length > 0) {
+    return rpcTransfers;
+  }
+
+  const apiKey = process.env.BSCSCAN_API_KEY;
+  if (apiKey) {
+    try {
+      const url = `https://api.etherscan.io/v2/api?chainid=56&module=account&action=tokentx&contractaddress=${USDT_BEP20_CONTRACT}&address=${RECEIVER_WALLET}&page=1&offset=50&sort=desc&apikey=${apiKey}`;
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(8000),
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.status === "1" && Array.isArray(data.result)) {
+          const targetLower = RECEIVER_WALLET.toLowerCase();
+          return data.result
+            .filter((tx: { to?: string }) => tx.to?.toLowerCase() === targetLower)
+            .map((tx: { hash: string; from: string; value: string; timeStamp: string }) => ({
+              txHash: tx.hash.toLowerCase(),
+              from: (tx.from || "").toLowerCase(),
+              valueWei: BigInt(tx.value),
+              timestampMs: Number(tx.timeStamp) * 1000,
+            }));
+        }
+      }
+    } catch {
+      // Ignore API fallback error
+    }
+  }
+
+  return [];
+}
+
 async function fetchViaBscRpc(): Promise<IncomingBep20Transfer[]> {
   const paddedTo =
     "0x000000000000000000000000" + RECEIVER_WALLET.slice(2).toLowerCase();
@@ -116,7 +122,8 @@ async function fetchViaBscRpc(): Promise<IncomingBep20Transfer[]> {
     try {
       const latestHex: string = await rpcCall(rpcUrl, "eth_blockNumber", []);
       const latestBlock = parseInt(latestHex, 16);
-      const fromBlock = Math.max(0, latestBlock - 450); // ~22 mins of BSC blocks (3s/block)
+      // Scan last 2500 blocks (~20-30 mins on BSC)
+      const fromBlock = Math.max(0, latestBlock - 2500);
 
       const logs: Array<{
         transactionHash: string;
@@ -132,24 +139,43 @@ async function fetchViaBscRpc(): Promise<IncomingBep20Transfer[]> {
         },
       ]);
 
-      if (!Array.isArray(logs)) return [];
+      if (!Array.isArray(logs)) continue;
 
-      const nowMs = Date.now();
-      return logs.map((log) => {
-        const blockNum = parseInt(log.blockNumber, 16);
-        const approxAgeMs = Math.max(0, latestBlock - blockNum) * 3000;
+      const blockTimeCache = new Map<string, number>();
+      const transfers: IncomingBep20Transfer[] = [];
+
+      for (const log of logs) {
+        let timestampMs = blockTimeCache.get(log.blockNumber);
+        if (!timestampMs) {
+          try {
+            const block = await rpcCall(rpcUrl, "eth_getBlockByNumber", [
+              log.blockNumber,
+              false,
+            ]);
+            timestampMs = block?.timestamp
+              ? parseInt(block.timestamp, 16) * 1000
+              : Date.now();
+          } catch {
+            timestampMs = Date.now();
+          }
+          blockTimeCache.set(log.blockNumber, timestampMs);
+        }
+
         const fromTopic = log.topics?.[1] || "";
         const fromAddr =
           fromTopic.length === 66
             ? ("0x" + fromTopic.slice(26)).toLowerCase()
             : "";
-        return {
+
+        transfers.push({
           txHash: log.transactionHash.toLowerCase(),
           from: fromAddr,
           valueWei: BigInt(log.data),
-          timestampMs: nowMs - approxAgeMs,
-        };
-      });
+          timestampMs,
+        });
+      }
+
+      return transfers;
     } catch {
       continue;
     }
