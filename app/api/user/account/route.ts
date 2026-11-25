@@ -169,11 +169,7 @@ export async function PATCH(request: NextRequest) {
       data: {
         status: nextStatus,
         ...(nextStatus === "inactive"
-          ? {
-              lastRunMessage: "Auto-Click stopped by user.",
-              // Reset validity on Stop for admin test account so Start Auto-Click triggers payment flow
-              ...(currentUser?.role === "admin" ? { subscriptionExpiresAt: null } : {}),
-            }
+          ? { lastRunMessage: "Auto-Click stopped by user." }
           : { lastRunMessage: "Auto-Click started. Running check..." }),
       },
     });
