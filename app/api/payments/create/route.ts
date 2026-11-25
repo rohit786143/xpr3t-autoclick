@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const qrDataUrl = await generateBep20PaymentQr(expectedAmount);
+    const qrDataUrl = await generateBep20PaymentQr();
 
     return NextResponse.json({
       order: {

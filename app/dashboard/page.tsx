@@ -820,11 +820,22 @@ export default function UserDashboard() {
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-blue-700 block">
                     Exact Amount to Pay ({paymentOrder.planLabel})
                   </span>
-                  <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-mono mt-1">
-                    {paymentOrder.expectedAmount} USDT
+                  <div className="flex items-center justify-center gap-3 mt-1">
+                    <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-mono">
+                      {paymentOrder.expectedAmount} USDT
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(paymentOrder.expectedAmount);
+                      }}
+                      className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 transition"
+                    >
+                      Copy
+                    </button>
                   </div>
-                  <p className="text-[11px] text-blue-700 mt-1">
-                    Amount is auto-locked for your account. Do not edit the decimal amount while paying.
+                  <p className="text-[11px] text-blue-700 mt-1.5">
+                    Scan QR in your wallet (USDT BEP20) and enter this exact amount.
                   </p>
                 </div>
 

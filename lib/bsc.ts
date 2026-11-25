@@ -28,13 +28,12 @@ export function usdtToWei(amountStr: string): bigint {
 }
 
 /**
- * Generates an EIP-681 BEP20 USDT payment QR data URL with recipient and exact amount encoded.
- * Does NOT expose the wallet address text separately in the UI.
+ * Generates a universal BEP20 wallet QR code data URL.
+ * Encodes only the clean wallet address so SafePal, Trust Wallet, MetaMask, and Binance
+ * never throw "Invalid address" when scanning from their Send screen.
  */
-export async function generateBep20PaymentQr(amountStr: string): Promise<string> {
-  const weiAmount = usdtToWei(amountStr).toString();
-  const uri = `ethereum:${USDT_BEP20_CONTRACT}@56/transfer?address=${RECEIVER_WALLET}&uint256=${weiAmount}`;
-  return QRCode.toDataURL(uri, {
+export async function generateBep20PaymentQr(): Promise<string> {
+  return QRCode.toDataURL(RECEIVER_WALLET, {
     width: 280,
     margin: 2,
     color: {
