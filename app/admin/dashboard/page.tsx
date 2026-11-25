@@ -106,8 +106,7 @@ export default function AdminDashboardPage() {
       if (!res.ok) {
         throw new Error(data.error || "Ghost login failed.");
       }
-      router.push("/dashboard");
-      router.refresh();
+      window.location.href = "/dashboard";
     } catch (err: unknown) {
       setBanner({
         type: "error",

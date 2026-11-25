@@ -140,9 +140,20 @@ export default function UserDashboard() {
 
   const fetchUserData = useCallback(async () => {
     try {
-      const res = await fetch("/api/user/account");
+      const res = await fetch("/api/user/account", {
+        cache: "no-store",
+        signal: AbortSignal.timeout(12000),
+      });
       if (res.status === 401) {
-        router.push("/");
+        window.location.href = "/";
+        return;
+      }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        setActionMessage({
+          type: "error",
+          text: errData.error || `Failed to load dashboard (HTTP ${res.status}).`,
+        });
         return;
       }
       const data = await res.json();
@@ -152,10 +163,14 @@ export default function UserDashboard() {
       }
     } catch (err) {
       console.error("Failed to load user data:", err);
+      setActionMessage({
+        type: "error",
+        text: "Dashboard took too long to load. Please refresh the page.",
+      });
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }, []);
 
   useEffect(() => {
     fetchUserData();
@@ -315,8 +330,7 @@ export default function UserDashboard() {
       });
       const data = await res.json();
       if (data.redirect) {
-        router.push(data.redirect);
-        router.refresh();
+        window.location.href = data.redirect;
       }
     } catch (err) {
       console.error("Failed to exit ghost mode:", err);
