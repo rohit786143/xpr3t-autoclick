@@ -193,9 +193,8 @@ export default function UserDashboard() {
             text: "USDT (BEP20) payment verified via BscScan! Auto-Click is now active.",
           });
           await fetchUserData();
-        } else if (data.status === "expired" && paymentOrder) {
-          // Automatically rotate to a fresh unique amount & QR every 10 minutes
-          await handleSelectPlan(paymentOrder.planDays);
+        } else if (data.status === "expired") {
+          setPaymentError("QR expired. Please click 'Generate New QR' to get a fresh amount.");
         }
       } catch {
         // Ignore transient network poll error
@@ -203,7 +202,7 @@ export default function UserDashboard() {
         if (manual) setCheckingPayment(false);
       }
     },
-    [fetchUserData, handleSelectPlan, paymentOrder]
+    [fetchUserData]
   );
 
   // Live 10-minute countdown timer & 8-second blockchain auto-polling
@@ -216,9 +215,6 @@ export default function UserDashboard() {
         Math.floor((new Date(paymentOrder.expiresAt).getTime() - Date.now()) / 1000)
       );
       setSecondsLeft(diffSec);
-      if (diffSec === 0) {
-        handleSelectPlan(paymentOrder.planDays);
-      }
     };
 
     updateTimer();
@@ -231,7 +227,7 @@ export default function UserDashboard() {
       clearInterval(timerInterval);
       clearInterval(pollInterval);
     };
-  }, [showPaymentModal, paymentOrder, handleSelectPlan, checkPaymentStatus]);
+  }, [showPaymentModal, paymentOrder, checkPaymentStatus]);
 
   const handleToggleAutoClick = async (nextStatus: "active" | "inactive") => {
     setTogglingStatus(true);
@@ -832,8 +828,18 @@ export default function UserDashboard() {
                   </p>
                 </div>
 
-                <div className="flex items-center justify-between text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded-xl px-4 py-2.5">
-                  <span>QR &amp; Amount refreshes in:</span>
+                <div
+                  className={`flex items-center justify-between text-xs rounded-xl px-4 py-2.5 border ${
+                    secondsLeft > 0
+                      ? "bg-amber-50 border-amber-200 text-amber-900"
+                      : "bg-red-50 border-red-200 text-red-900"
+                  }`}
+                >
+                  <span>
+                    {secondsLeft > 0
+                      ? "Time remaining to pay (10 min window):"
+                      : "10 min window ended — If already paid, click Verify Now:"}
+                  </span>
                   <span className="font-mono font-bold text-sm">
                     {String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:
                     {String(secondsLeft % 60).padStart(2, "0")}
@@ -849,13 +855,24 @@ export default function UserDashboard() {
                   >
                     {checkingPayment ? "Checking BscScan..." : "I Have Paid — Verify Now"}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentOrder(null)}
-                    className="py-2.5 px-4 rounded-xl font-semibold text-sm text-slate-700 bg-slate-100 hover:bg-slate-200 transition"
-                  >
-                    Change Plan
-                  </button>
+                  {secondsLeft === 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => handleSelectPlan(paymentOrder.planDays)}
+                      disabled={creatingOrder}
+                      className="py-2.5 px-4 rounded-xl font-semibold text-sm text-white bg-blue-600 hover:bg-blue-700 transition disabled:opacity-60"
+                    >
+                      {creatingOrder ? "Generating..." : "Generate New QR"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentOrder(null)}
+                      className="py-2.5 px-4 rounded-xl font-semibold text-sm text-slate-700 bg-slate-100 hover:bg-slate-200 transition"
+                    >
+                      Change Plan
+                    </button>
+                  )}
                 </div>
               </div>
             )}

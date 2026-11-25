@@ -13,16 +13,17 @@ import {
  * by any other active pending PaymentOrder in the last 10 minutes.
  */
 async function pickUniqueAmount(baseUsd: number): Promise<string> {
-  const now = new Date();
-  const activeOrders = await prisma.paymentOrder.findMany({
+  // Reserve each generated micro-amount for 30 minutes so late blockchain confirmations
+  // (e.g. user scans at 9:55 and tx confirms at 10:15) can never collide with another user.
+  const cooldownCutoff = new Date(Date.now() - 30 * 60 * 1000);
+  const recentOrders = await prisma.paymentOrder.findMany({
     where: {
-      status: "pending",
-      expiresAt: { gt: now },
+      createdAt: { gt: cooldownCutoff },
     },
     select: { expectedAmount: true },
   });
 
-  const usedSet = new Set(activeOrders.map((o) => o.expectedAmount));
+  const usedSet = new Set(recentOrders.map((o) => o.expectedAmount));
 
   // Try 3-decimal micro-offsets (.001 to .099) first, e.g. 1.014, 3.026
   for (let attempt = 0; attempt < 60; attempt++) {

@@ -34,7 +34,9 @@ export async function GET(request: NextRequest) {
     }
 
     const now = new Date();
-    if (now > order.expiresAt) {
+    // Allow 5-minute blockchain confirmation grace window after the 10-min countdown
+    const graceCutoff = new Date(order.expiresAt.getTime() + 5 * 60 * 1000);
+    if (now > graceCutoff) {
       if (order.status !== "expired") {
         await prisma.paymentOrder.update({
           where: { id: order.id },
