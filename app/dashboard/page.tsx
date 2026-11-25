@@ -453,11 +453,7 @@ export default function UserDashboard() {
                     Auto-Click Stopped
                   </span>
                 )}
-                {user?.role === "admin" ? (
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 border border-purple-200">
-                    Lifetime Validity (Admin)
-                  </span>
-                ) : user?.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) > new Date() ? (
+                {user?.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) > new Date() ? (
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
                     Valid till:{" "}
                     {new Date(user.subscriptionExpiresAt).toLocaleDateString("en-IN", {
@@ -513,19 +509,17 @@ export default function UserDashboard() {
               {runningTest ? "Testing..." : "Test Run Now"}
             </button>
 
-            {user?.role !== "admin" && (
-              <button
-                onClick={() => {
-                  setSelectedPlanDays(null);
-                  setPaymentOrder(null);
-                  setPaymentError(null);
-                  setShowPaymentModal(true);
-                }}
-                className="px-4 py-2.5 rounded-xl font-semibold text-sm text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition"
-              >
-                Extend Plan
-              </button>
-            )}
+            <button
+              onClick={() => {
+                setSelectedPlanDays(null);
+                setPaymentOrder(null);
+                setPaymentError(null);
+                setShowPaymentModal(true);
+              }}
+              className="px-4 py-2.5 rounded-xl font-semibold text-sm text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition"
+            >
+              Extend Plan
+            </button>
           </div>
         </div>
 

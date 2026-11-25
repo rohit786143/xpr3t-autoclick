@@ -139,16 +139,15 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json();
     const nextStatus = body.status === "active" ? "active" : "inactive";
 
-    if (nextStatus === "active") {
-      const currentUser = await prisma.user.findUnique({
-        where: { id: session.sub },
-        select: { role: true, subscriptionExpiresAt: true },
-      });
+    const currentUser = await prisma.user.findUnique({
+      where: { id: session.sub },
+      select: { role: true, subscriptionExpiresAt: true },
+    });
 
+    if (nextStatus === "active") {
       const hasValidSub =
-        currentUser?.role === "admin" ||
-        (currentUser?.subscriptionExpiresAt &&
-          new Date(currentUser.subscriptionExpiresAt) > new Date());
+        currentUser?.subscriptionExpiresAt &&
+        new Date(currentUser.subscriptionExpiresAt) > new Date();
 
       if (!hasValidSub) {
         return NextResponse.json({
@@ -164,7 +163,11 @@ export async function PATCH(request: NextRequest) {
       data: {
         status: nextStatus,
         ...(nextStatus === "inactive"
-          ? { lastRunMessage: "Auto-Click stopped by user." }
+          ? {
+              lastRunMessage: "Auto-Click stopped by user.",
+              // Reset validity on Stop for admin test account so Start Auto-Click triggers payment flow
+              ...(currentUser?.role === "admin" ? { subscriptionExpiresAt: null } : {}),
+            }
           : { lastRunMessage: "Auto-Click started. Running check..." }),
       },
     });
