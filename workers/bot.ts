@@ -267,11 +267,12 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
 
     console.log(`[Bot][${accountIdentifier}] Navigating to Dashboard / Sign-in...`);
     await page.goto("https://xpr3t.com/Jmd810vPa67mEL/Dashboard.html", {
-      waitUntil: "domcontentloaded",
+      waitUntil: "load",
       timeout: 30000,
     });
 
-    await page.waitForTimeout(2000);
+    await page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {});
+    await page.waitForTimeout(1500);
 
     // If redirected to Sign-in.html or login form is present, perform automated login
     const isLoginPage =
@@ -280,6 +281,8 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
 
     if (isLoginPage) {
       console.log(`[Bot][${accountIdentifier}] Login required. Filling credentials...`);
+      await page.waitForLoadState("load", { timeout: 15000 }).catch(() => {});
+      await page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {});
 
       const plainPassword = decryptTargetPassword(user.encryptedPassword);
       if (!plainPassword) {
@@ -290,6 +293,7 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
       const passwordInput = page.locator("#inputPassword").first();
       const submitButton = page.locator("#submit-login").first();
 
+      await usernameInput.waitFor({ state: "visible", timeout: 10000 });
       await usernameInput.fill("");
       await usernameInput.fill(user.xpr3tUsername);
       await passwordInput.fill("");
@@ -304,8 +308,8 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
 
       // Wait for login redirection or SweetAlert popup
       await Promise.race([
-        page.waitForURL((url) => !url.href.includes("Sign-in.html"), { timeout: 15000 }),
-        page.locator(".sweet-alert.showSweetAlert, .sweet-alert.visible").waitFor({ state: "visible", timeout: 8000 }),
+        page.waitForURL((url) => !url.href.includes("Sign-in.html"), { timeout: 18000 }),
+        page.locator(".sweet-alert.showSweetAlert, .sweet-alert.visible").waitFor({ state: "visible", timeout: 10000 }),
       ]).catch(() => {});
 
       await page.waitForTimeout(2000);
@@ -325,9 +329,20 @@ export async function runBotForUser(userId: string): Promise<BotRunResult> {
         }
       }
 
-      // If still on Sign-in.html after clicking submit
+      // If still on Sign-in.html without SweetAlert error, retry submit once in case JS wasn't ready
       if (page.url().includes("Sign-in.html")) {
-        throw new Error("Wrong username or password (Login failed).");
+        await submitButton.click().catch(() => {});
+        await page.waitForURL((url) => !url.href.includes("Sign-in.html"), { timeout: 12000 }).catch(() => {});
+        await page.waitForTimeout(1500);
+
+        if (await swalAlert.isVisible({ timeout: 1000 }).catch(() => false)) {
+          const retryError = (await swalAlert.textContent())?.trim() || "";
+          throw new Error(`Wrong username or password (${retryError || "Invalid credentials"})`);
+        }
+
+        if (page.url().includes("Sign-in.html")) {
+          throw new Error("xpr3t.com login page did not redirect after submit. Please try Test Click again.");
+        }
       }
     }
 
